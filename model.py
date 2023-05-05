@@ -188,7 +188,7 @@ class EnsembleModel(nn.Module):
         self.optimizer.step()
 
 
-class EnsembleDynamicsModel():
+class EnsembleDynamicsModel:
     def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
@@ -353,8 +353,8 @@ def main():
     model = EnsembleDynamicsModel(num_networks, num_elites, state_size, action_size, reward_size, pred_hidden_size)
 
     # load tf weights and set it to be the inital weights for pytorch model
-    with open('tf_weights.pkl', 'rb') as f:
-        tf_weights = pickle.load(f)
+    # with open('tf_weights.pkl', 'rb') as f:
+    #     tf_weights = pickle.load(f)
     # set_tf_weights(model, tf_weights)
     # x = model.model_list[0].named_parameters()
     # for name, param in model.model_list[0].named_parameters():

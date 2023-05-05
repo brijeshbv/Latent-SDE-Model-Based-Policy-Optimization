@@ -17,7 +17,7 @@ from model import EnsembleDynamicsModel
 from predict_env import PredictEnv
 from sample_env import EnvSampler
 from tf_models.constructor import construct_model, format_samples_for_training
-
+from lsde_model import LatentSDEModel
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -61,7 +61,8 @@ def readParser():
 
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
                         help='retain epochs')
-    parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
+    #todo was 250
+    parser.add_argument('--model_train_freq', type=int, default=25, metavar='A',
                         help='frequency of training')
     parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
                         help='rollout number M')
@@ -89,7 +90,8 @@ def readParser():
                         help='max training times per step')
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
-    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
+    #todo was 5000
+    parser.add_argument('--init_exploration_steps', type=int, default=100, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -176,10 +178,10 @@ def train_predict_model(args, env_pool, predict_env):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state = next_state - state
-    inputs = np.concatenate((state, action), axis=-1)
+    inputs = state
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
 
-    predict_env.model.train(inputs, labels, batch_size=256, holdout_ratio=0.2)
+    predict_env.model.train(inputs, labels, action, reward, holdout_ratio=0.2)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -199,7 +201,7 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, trunc, info = predict_env.step(state, action)
+        next_states, rewards, terminals, info = predict_env.step(state, action)
         # TODO: Push a batch of samples
         model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
@@ -285,6 +287,8 @@ def main(args=None):
     if args.model_type == 'pytorch':
         env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, args.pred_hidden_size,
                                           use_decay=args.use_decay)
+    elif args.model_type == 'torchsde':
+        env_model = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, args.pred_hidden_size)
     else:
         env_model = construct_model(obs_dim=state_size, act_dim=action_size, hidden_dim=args.pred_hidden_size, num_networks=args.num_networks,
                                     num_elites=args.num_elites)
