@@ -4,7 +4,6 @@ import gym
 import torch
 import numpy as np
 from itertools import count
-import wandb
 
 import logging
 
@@ -18,7 +17,7 @@ from model import EnsembleDynamicsModel
 from predict_env import PredictEnv
 from sample_env import EnvSampler
 from tf_models.constructor import construct_model, format_samples_for_training
-
+from lsde_model import LatentSDEModel
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -62,7 +61,8 @@ def readParser():
 
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
                         help='retain epochs')
-    parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
+    #todo was 250
+    parser.add_argument('--model_train_freq', type=int, default=25, metavar='A',
                         help='frequency of training')
     parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
                         help='rollout number M')
@@ -90,6 +90,7 @@ def readParser():
                         help='max training times per step')
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
+    #todo was 5000
     parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
@@ -98,10 +99,6 @@ def readParser():
 
     parser.add_argument('--model_type', default='tensorflow', metavar='A',
                         help='predict model -- pytorch or tensorflow')
-    parser.add_argument('--wandb', default='yes', metavar='A',
-                        help='wandb log yes or no')
-    parser.add_argument('--resdir', default="plts",metavar='A',
-                        help='results directory')
 
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
@@ -121,18 +118,17 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
             cur_step = total_step - start_step
 
             if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
-                print('breaking cycle')
                 break
 
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env, total_step)
+                train_predict_model(args, env_pool, predict_env)
 
                 new_rollout_length = set_rollout_length(args, epoch_step)
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
 
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)
@@ -141,8 +137,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
 
             total_step += 1
-            if total_step % 200 == 0:
-                print(f'Steps taken: {total_step}\n')
+
             if total_step % args.epoch_length == 0:
                 '''
                 avg_reward_len = min(len(env_sampler.path_rewards), 5)
@@ -162,8 +157,6 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 # logger.record_tabular("total_step", total_step)
                 # logger.record_tabular("sum_reward", sum_reward)
                 # logger.dump_tabular()
-                if args.wandb != 'no':
-                    wandb.log({'reward': sum_reward},step = total_step)
                 logging.info("Step Reward: " + str(total_step) + " " + str(sum_reward))
                 # print(total_step, sum_reward)
 
@@ -181,14 +174,14 @@ def set_rollout_length(args, epoch_step):
     return int(rollout_length)
 
 
-def train_predict_model(args, env_pool, predict_env, epoch_step):
+def train_predict_model(args, env_pool, predict_env):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state = next_state - state
-    inputs = np.concatenate((state, action), axis=-1)
+    inputs = state
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
-    print(f'training model, {inputs.shape}')
-    predict_env.model.train(args ,inputs, labels, epoch_step)
+
+    predict_env.model.train(inputs, labels, action, reward, holdout_ratio=0.2)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -203,12 +196,12 @@ def resize_model_pool(args, rollout_length, model_pool):
     return new_model_pool
 
 
-def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step):
+def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length):
     state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, trunc = predict_env.step(state, action, total_step)
+        next_states, rewards, terminals, info = predict_env.step(state, action)
         # TODO: Push a batch of samples
         model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
@@ -276,14 +269,9 @@ class SingleEnvWrapper(gym.Wrapper):
 def main(args=None):
     if args is None:
         args = readParser()
-    if args.wandb != 'no':
-        wandb.login()
-        wandb.init(project='lsde-mbrl')
+
     # Initial environment
-    if args.env_name == 'InvertedPendulum-v4':
-        env = gym.make(args.env_name)
-    else:
-        env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
+    env = gym.make(args.env_name)
 
     # Set random seed
     torch.manual_seed(args.seed)
@@ -299,6 +287,8 @@ def main(args=None):
     if args.model_type == 'pytorch':
         env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, args.pred_hidden_size,
                                           use_decay=args.use_decay)
+    elif args.model_type == 'torchsde':
+        env_model = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, args.pred_hidden_size)
     else:
         env_model = construct_model(obs_dim=state_size, act_dim=action_size, hidden_dim=args.pred_hidden_size, num_networks=args.num_networks,
                                     num_elites=args.num_elites)
@@ -321,5 +311,4 @@ def main(args=None):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
     main()
