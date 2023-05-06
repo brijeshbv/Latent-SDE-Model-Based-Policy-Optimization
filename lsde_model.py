@@ -2,12 +2,12 @@ import fire
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
 import torchsde
 import itertools
+import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -238,7 +238,8 @@ class LatentSDE(nn.Module):
         return loss
 
     @torch.no_grad()
-    def sample_fromx0(self, x0, ts, bm=None, actions=None, zs=None):
+    def sample_fromx0(self, x0, bm=None, actions=None, zs=None):
+        ts = torch.linspace(self.t0, self.t1, steps=x0.shape[0], device=device)
         ts_horizon = ts.permute((1, 0))
         predicted_xs = x0.reshape(1, x0.shape[0], x0.shape[1])
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
@@ -313,8 +314,11 @@ class LatentSDEModel:
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
         holdout_rewards = holdout_rewards[None, :].repeat([self.network_size, 1])
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
-
-        for epoch in itertools.count():
+        steps = 25
+        holdout_inputs = self.chunkify_into_steps(holdout_inputs, steps)
+        holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, steps)
+        holdout_rewards = self.chunkify_into_steps(holdout_rewards, steps)
+        for epoch in tqdm.tqdm(itertools.count()):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -338,19 +342,19 @@ class LatentSDEModel:
 
             with torch.no_grad():
                 # batch the data in steps of {steps} variable size
-                steps = 25
-                holdout_inputs = self.chunkify_into_steps(holdout_inputs, steps)
-                holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, steps)
-                holdout_rewards = self.chunkify_into_steps(holdout_rewards, steps)
+
+
+                holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
                     ho_log_pxs, ho_logqp_path = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i], holdout_rewards[i])
-                    holdout_mse_losses = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
-                    holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
-                    sorted_loss_idx = np.argsort(holdout_mse_losses)
-                    self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
-                    break_train = self._save_best(epoch, holdout_mse_losses)
-                    if break_train:
-                        break
+                    holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
+                    holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
+                    holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
+                sorted_loss_idx = np.argsort(holdout_mse_losses)
+                self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
+                break_train = self._save_best(epoch, holdout_mse_losses)
+                if break_train:
+                    break
 
     def chunkify_into_steps(self, data, steps):
         op = np.array([], dtype=np.float32)
