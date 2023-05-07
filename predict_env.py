@@ -90,7 +90,7 @@ class PredictEnv:
         samples = ensemble_samples[model_idxes, batch_idxes]
         model_means = ensemble_model_means[model_idxes, batch_idxes]
 
-        log_prob, dev = self._get_logprob(samples, ensemble_model_means)
+        #log_prob, dev = self._get_logprob(samples, ensemble_model_means)
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
@@ -103,6 +103,6 @@ class PredictEnv:
             return_means = return_means[0]
             rewards = rewards[0]
             terminals = terminals[0]
-
-        info = {'mean': return_means,'log_prob': log_prob, 'dev': dev}
+#'log_prob': log_prob, 'dev': dev
+        info = {'mean': return_means,}
         return next_obs, rewards, terminals, info
