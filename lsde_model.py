@@ -98,6 +98,7 @@ class LatentSDE(nn.Module):
         self.dt = dt
         self.skip_every = skip_every
         self.reward_size = reward_size
+        self.latent_size = latent_size
         # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size + context_size, hidden_size),
@@ -164,7 +165,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions,rewards, adjoint=True, method="reversible_heun"):
+    def forward(self, xs, actions, rewards, adjoint=True, method="reversible_heun"):
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
@@ -238,33 +239,21 @@ class LatentSDE(nn.Module):
         return loss
 
     @torch.no_grad()
-    def sample_fromx0(self, x0, bm=None, actions=None, zs=None):
-        ts = torch.linspace(self.t0, self.t1, steps=x0.shape[0], device=device)
-        ts_horizon = ts.permute((1, 0))
-        predicted_xs = x0.reshape(1, x0.shape[0], x0.shape[1])
-        sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
-        for i in sampled_t:
-            t_horizon = ts_horizon[0][i: i + self.skip_every]
-            if i == 0:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], x0), dim=1)
-            elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], predicted_xs[-1, :, :]), dim=1)
-            else:
-                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
-                                            dim=1)
+    def sample_fromx0(self, xs, actions=None, z0=None, batch_size=32, steps=2):
+        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
+                                       levy_area_approximation="space-time")
+        t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
+        for i in tqdm.tqdm(range(xs.shape[0])):
+            latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm,
                                      method="reversible_heun")
-            # Most of the time in ML, we don't sample the observation noise for visualization purposes.
-
             xs_hat = self.projector(z_pred)
-            # + x0_noise.exp() * torch.randn_like(x0_noise)
+            z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
             if i == 0:
-                zs = z_pred
-                predicted_xs = xs_hat
+                predicted_xs = xs_hat[-1]
             else:
-                predicted_xs = torch.cat((predicted_xs, xs_hat), dim=0)
-                zs = torch.cat((zs, z_pred), dim=0)
+                predicted_xs = torch.cat((predicted_xs, xs_hat[-1]), dim=0)
         return predicted_xs
 
 
@@ -299,7 +288,8 @@ class LatentSDEModel:
 
         train_inputs, train_labels, train_rewards = inputs[num_holdout:], labels[num_holdout:], rewards[num_holdout:]
         train_actions_inputs = actions[num_holdout:]
-        holdout_inputs, holdout_labels, holdout_rewards = inputs[:num_holdout], labels[:num_holdout], rewards[:num_holdout]
+        holdout_inputs, holdout_labels, holdout_rewards = inputs[:num_holdout], labels[:num_holdout], rewards[
+                                                                                                      :num_holdout]
         holdout_actions_inputs = actions[:num_holdout]
 
         self.scaler.fit(train_inputs)
@@ -343,10 +333,10 @@ class LatentSDEModel:
             with torch.no_grad():
                 # batch the data in steps of {steps} variable size
 
-
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
-                    ho_log_pxs, ho_logqp_path = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i], holdout_rewards[i])
+                    ho_log_pxs, ho_logqp_path = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i],
+                                                                    holdout_rewards[i])
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
@@ -356,6 +346,18 @@ class LatentSDEModel:
                 if break_train:
                     break
 
+    def batchify(self, data, batch_size):
+        batches, dim = data.shape
+        big_chunk = np.array([], dtype=np.float32)
+        for j in range(batches):
+            if j % batch_size == 0:
+                chunk = data[j:j + batch_size]
+                if j == 0:
+                    big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+                else:
+                    big_chunk = np.append(big_chunk,
+                                          np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
+        return torch.asarray(big_chunk, dtype=torch.float32)
     def chunkify_into_steps(self, data, steps):
         op = np.array([], dtype=np.float32)
         if len(data.shape) == 3:
@@ -412,7 +414,7 @@ class LatentSDEModel:
                         big_chunk = np.append(big_chunk,
                                               np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
             op = torch.as_tensor(big_chunk)
-            op = torch.permute(op, (1,0,2))
+            op = torch.permute(op, (1, 0, 2))
 
             # ensemble, steps, batch, dim
         return op
@@ -438,5 +440,10 @@ class LatentSDEModel:
         else:
             return False
 
-    def predict(self, inputs, batch_size=1024, factored=True):
-        predictions = self.ensemble_model.sample_fromx0(x0=inputs)
+    def predict(self, inputs, actions, batch_size=32, factored=True):
+        inputs = self.batchify(inputs, batch_size)
+        actions = self.batchify(actions, batch_size)
+        z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(self.ensemble_model.pz0_mean)
+        z0 = torch.reshape(z0, (z0.shape[0],1, z0.shape[1])).repeat(1, batch_size, 1)
+        model_op = self.ensemble_model.sample_fromx0(inputs, actions,z0, batch_size)
+        return model_op
