@@ -81,7 +81,7 @@ class PredictEnv:
 
         ensemble_samples = ensemble_model_means
         num_models, batch_size, _ = ensemble_model_means.shape
-        if self.model_type == 'pytorch':
+        if self.model_type == 'pytorch' or self.model_type == 'torchsde':
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
         else:
             model_idxes = self.model.random_inds(batch_size)
