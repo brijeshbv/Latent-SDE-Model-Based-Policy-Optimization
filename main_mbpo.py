@@ -55,8 +55,8 @@ def readParser():
                         help='hidden size for predictive model')
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
-
-    parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
+#todo restore replay size 1000000
+    parser.add_argument('--replay_size', type=int, default=10000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
@@ -64,7 +64,8 @@ def readParser():
     #todo was 250
     parser.add_argument('--model_train_freq', type=int, default=25, metavar='A',
                         help='frequency of training')
-    parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
+    # todo rollout_batch_size replay size 10000
+    parser.add_argument('--rollout_batch_size', type=int, default=8192, metavar='A',
                         help='rollout number M')
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
                         help='steps per epoch')
@@ -121,7 +122,8 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 break
 
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env)
+                #todo restore comment above
+                #train_predict_model(args, env_pool, predict_env)
 
                 new_rollout_length = set_rollout_length(args, epoch_step)
                 if rollout_length != new_rollout_length:
