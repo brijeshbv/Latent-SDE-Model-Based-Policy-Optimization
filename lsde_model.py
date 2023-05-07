@@ -82,7 +82,7 @@ class LatentSDE(nn.Module):
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
-                 skip_every=5,
+                 skip_every=1,
                  t1=2, dt=0.01):
         super(LatentSDE, self).__init__()
         # hyper-parameters
@@ -210,8 +210,9 @@ class LatentSDE(nn.Module):
                 zs = z_pred
             else:
                 # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
-                zs = torch.cat((zs, z_pred), dim=0)
+                predicted_xs = torch.cat((predicted_xs, xs_mean[-1].reshape(1, xs_mean.shape[1], xs_mean.shape[2])),
+                                         dim=0)
+                zs = torch.cat((zs, z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
             if i == 0:
                 cum_log_ratio = log_ratio
             else:
@@ -304,10 +305,11 @@ class LatentSDEModel:
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
         holdout_rewards = holdout_rewards[None, :].repeat([self.network_size, 1])
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
-        steps = 25
-        holdout_inputs = self.chunkify_into_steps(holdout_inputs, steps)
-        holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, steps)
-        holdout_rewards = self.chunkify_into_steps(holdout_rewards, steps)
+        holdout_steps = holdout_inputs.shape[1] // 5
+        holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
+        holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
+        holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
+        batch_size = 250
         for epoch in tqdm.tqdm(itertools.count()):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
@@ -320,10 +322,10 @@ class LatentSDEModel:
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 losses = []
                 # batch the data in steps of {steps} variable size
-                steps = 25
-                train_input = self.chunkify_into_steps(train_input, steps)
-                train_action_input = self.chunkify_into_steps(train_action_input, steps)
-                train_reward = self.chunkify_into_steps(train_reward, steps)
+                train_steps = train_input.shape[1] // 10
+                train_input = self.chunkify_into_steps(train_input, train_steps)
+                train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
+                train_reward = self.chunkify_into_steps(train_reward, train_steps)
                 for i in range(train_input.shape[0]):
                     log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
                     loss = self.ensemble_model.loss(log_pxs, logqp_path)
@@ -358,6 +360,7 @@ class LatentSDEModel:
                     big_chunk = np.append(big_chunk,
                                           np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
         return torch.asarray(big_chunk, dtype=torch.float32)
+
     def chunkify_into_steps(self, data, steps):
         op = np.array([], dtype=np.float32)
         if len(data.shape) == 3:
@@ -443,7 +446,8 @@ class LatentSDEModel:
     def predict(self, inputs, actions, batch_size=32, factored=True):
         inputs = self.batchify(inputs, batch_size)
         actions = self.batchify(actions, batch_size)
-        z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(self.ensemble_model.pz0_mean)
-        z0 = torch.reshape(z0, (z0.shape[0],1, z0.shape[1])).repeat(1, batch_size, 1)
-        model_op = self.ensemble_model.sample_fromx0(inputs, actions,z0, batch_size).repeat([self.network_size, 1, 1])
+        z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(
+            self.ensemble_model.pz0_mean)
+        z0 = torch.reshape(z0, (z0.shape[0], 1, z0.shape[1])).repeat(1, batch_size, 1)
+        model_op = self.ensemble_model.sample_fromx0(inputs, actions, z0, batch_size).repeat([self.network_size, 1, 1])
         return model_op
