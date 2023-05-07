@@ -445,5 +445,5 @@ class LatentSDEModel:
         actions = self.batchify(actions, batch_size)
         z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(self.ensemble_model.pz0_mean)
         z0 = torch.reshape(z0, (z0.shape[0],1, z0.shape[1])).repeat(1, batch_size, 1)
-        model_op = self.ensemble_model.sample_fromx0(inputs, actions,z0, batch_size)
+        model_op = self.ensemble_model.sample_fromx0(inputs, actions,z0, batch_size).repeat([self.network_size, 1, 1])
         return model_op
