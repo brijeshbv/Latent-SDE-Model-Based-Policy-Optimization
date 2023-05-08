@@ -46,8 +46,8 @@ def readParser():
                         help='hidden size (default: 256)')
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
-
-    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
+    #todo was 7
+    parser.add_argument('--num_networks', type=int, default=1, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -94,7 +94,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     #todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=500, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
