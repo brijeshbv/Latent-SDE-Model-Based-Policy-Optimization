@@ -91,8 +91,11 @@ class GaussianPolicy(nn.Module):
         return mean, log_std
 
     def sample(self, state):
+        is_invalid = torch.isnan(state).any()
+        assert not is_invalid , f'some state vector was nan unfortunately, {is_invalid}'
         mean, log_std = self.forward(state)
         std = log_std.exp()
+        assert not torch.isnan(mean).any(), f'some mean vector was nan unfortunately'
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         y_t = torch.tanh(x_t)
