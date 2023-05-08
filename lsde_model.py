@@ -166,6 +166,7 @@ class LatentSDE(nn.Module):
         return torch.cat(out, dim=1)
 
     def forward(self, xs, actions, rewards, adjoint=True, method="reversible_heun"):
+        assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
@@ -310,7 +311,8 @@ class LatentSDEModel:
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         batch_size = 250
-        for epoch in tqdm.tqdm(itertools.count()):
+        #todo itertools.count()
+        for epoch in tqdm.tqdm(range(2)):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -322,11 +324,12 @@ class LatentSDEModel:
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 losses = []
                 # batch the data in steps of {steps} variable size
-                train_steps = train_input.shape[1] // 10
+                train_steps = train_input.shape[1] // 5
                 train_input = self.chunkify_into_steps(train_input, train_steps)
                 train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
                 for i in range(train_input.shape[0]):
+                    assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
                     log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
                     loss = self.ensemble_model.loss(log_pxs, logqp_path)
                     self.ensemble_model.train(loss)
