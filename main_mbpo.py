@@ -56,7 +56,7 @@ def readParser():
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
     #todo restore replay size 1000000
-    parser.add_argument('--replay_size', type=int, default=10000, metavar='N',
+    parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
@@ -65,8 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=25, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=8192, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=65536, metavar='A',
                         help='rollout number M')
+    # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
                         help='steps per epoch')
     parser.add_argument('--rollout_min_epoch', type=int, default=20, metavar='A',
@@ -80,7 +81,7 @@ def readParser():
     parser.add_argument('--num_epoch', type=int, default=1000, metavar='A',
                         help='total number of epochs')
     #todo was 1000
-    parser.add_argument('--min_pool_size', type=int, default=200, metavar='A',
+    parser.add_argument('--min_pool_size', type=int, default=1000, metavar='A',
                         help='minimum pool size')
     parser.add_argument('--real_ratio', type=float, default=0.05, metavar='A',
                         help='ratio of env samples / model samples')
@@ -93,7 +94,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     #todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=100, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -121,7 +122,6 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
 
             if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
                 break
-
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
                 train_predict_model(args, env_pool, predict_env)
 
@@ -159,7 +159,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 # logger.record_tabular("total_step", total_step)
                 # logger.record_tabular("sum_reward", sum_reward)
                 # logger.dump_tabular()
-                logging.info("Step Reward: " + str(total_step) + " " + str(sum_reward))
+                logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
                 # print(total_step, sum_reward)
 
 

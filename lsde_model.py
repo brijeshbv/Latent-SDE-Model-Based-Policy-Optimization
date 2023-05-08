@@ -245,7 +245,7 @@ class LatentSDE(nn.Module):
         bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
-        for i in tqdm.tqdm(range(xs.shape[0])):
+        for i in range(xs.shape[0]):
             latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm,
@@ -312,7 +312,7 @@ class LatentSDEModel:
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         batch_size = 250
         #todo itertools.count()
-        for epoch in tqdm.tqdm(range(2)):
+        for epoch in tqdm.tqdm(itertools.count()):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
