@@ -311,8 +311,9 @@ class LatentSDEModel:
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         batch_size = 250
+        print(f'train_inputs size {train_inputs.shape}')
         #todo itertools.count()
-        for epoch in tqdm.tqdm(itertools.count()):
+        for epoch in tqdm.tqdm(range(5)):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -325,9 +326,11 @@ class LatentSDEModel:
                 losses = []
                 # batch the data in steps of {steps} variable size
                 train_steps = train_input.shape[1] // 5
+
                 train_input = self.chunkify_into_steps(train_input, train_steps)
                 train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
+                print(f'train_input shape: {train_input.shape}, {train_steps}')
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
                     log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
