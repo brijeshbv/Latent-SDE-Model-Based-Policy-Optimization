@@ -83,7 +83,7 @@ class LatentSDE(nn.Module):
 
     def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
                  skip_every=1,
-                 t1=2, dt=0.01):
+                 t1=0.1, dt=0.05):
         super(LatentSDE, self).__init__()
         # hyper-parameters
         kl_anneal_iters = 700
@@ -104,14 +104,14 @@ class LatentSDE(nn.Module):
             nn.Linear(latent_size + context_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(hidden_size, latent_size),
         )
 
@@ -245,12 +245,17 @@ class LatentSDE(nn.Module):
         bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
+        print(f'predicting samples, input_size: {xs.shape}')
+        assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
         for i in range(xs.shape[0]):
             latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
+            assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm,
                                      method="reversible_heun")
+            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape} '
             xs_hat = self.projector(z_pred)
+            assert not torch.isnan(xs_hat).any(), f'some pred state vector was nan, check projector'
             z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
             if i == 0:
                 predicted_xs = xs_hat[-1]
@@ -311,9 +316,8 @@ class LatentSDEModel:
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         batch_size = 250
-        print(f'train_inputs size {train_inputs.shape}')
         #todo itertools.count()
-        for epoch in tqdm.tqdm(range(5)):
+        for epoch in tqdm.tqdm(itertools.count()):
 
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -330,7 +334,6 @@ class LatentSDEModel:
                 train_input = self.chunkify_into_steps(train_input, train_steps)
                 train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
-                print(f'train_input shape: {train_input.shape}, {train_steps}')
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
                     log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
@@ -449,11 +452,12 @@ class LatentSDEModel:
         else:
             return False
 
-    def predict(self, inputs, actions, batch_size=32, factored=True):
+    def predict(self, inputs, actions, batch_size=128, factored=True):
         inputs = self.batchify(inputs, batch_size)
         actions = self.batchify(actions, batch_size)
         z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(
             self.ensemble_model.pz0_mean)
         z0 = torch.reshape(z0, (z0.shape[0], 1, z0.shape[1])).repeat(1, batch_size, 1)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, z0, batch_size).repeat([self.network_size, 1, 1])
+        assert not np.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         return model_op

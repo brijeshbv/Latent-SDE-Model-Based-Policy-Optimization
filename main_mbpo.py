@@ -68,7 +68,7 @@ def readParser():
     parser.add_argument('--rollout_batch_size', type=int, default=65536, metavar='A',
                         help='rollout number M')
     # todo was 1000
-    parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
+    parser.add_argument('--epoch_length', type=int, default=200, metavar='A',
                         help='steps per epoch')
     parser.add_argument('--rollout_min_epoch', type=int, default=20, metavar='A',
                         help='rollout min epoch')
@@ -159,6 +159,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 # logger.record_tabular("total_step", total_step)
                 # logger.record_tabular("sum_reward", sum_reward)
                 # logger.dump_tabular()
+                print(f'Steps: {total_step} , reward: {sum_reward}\n')
                 logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
                 # print(total_step, sum_reward)
 
@@ -313,5 +314,5 @@ def main(args=None):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+    # logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
     main()
