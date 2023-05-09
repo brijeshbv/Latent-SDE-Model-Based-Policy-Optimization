@@ -2,6 +2,7 @@ import random
 import numpy as np
 from operator import itemgetter
 
+
 class ReplayMemory:
     def __init__(self, capacity):
         self.capacity = capacity
@@ -38,6 +39,7 @@ class ReplayMemory:
         idxes = np.random.randint(0, len(self.buffer), batch_size)
         batch = list(itemgetter(*idxes)(self.buffer))
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
+        assert not np.isnan(state).any(), f'some state vector was nan unfortunately'
         return state, action, reward, next_state, done
 
     def return_all(self):

@@ -43,7 +43,7 @@ class SAC(object):
 
     def select_action(self, state, eval=False):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-        if eval == False:
+        if not eval:
             action, _, _ = self.policy.sample(state)
         else:
             _, _, action = self.policy.sample(state)
