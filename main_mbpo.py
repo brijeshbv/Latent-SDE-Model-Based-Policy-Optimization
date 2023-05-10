@@ -214,6 +214,7 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
 
 
 def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent):
+    print(f'training the agent')
     if total_step % args.train_every_n_steps > 0:
         return 0
 

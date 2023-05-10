@@ -372,7 +372,7 @@ class LatentSDEModel:
                 else:
                     big_chunk = np.append(big_chunk,
                                           np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
-        return torch.asarray(big_chunk, dtype=torch.float32)
+        return torch.asarray(big_chunk, dtype=torch.float32).to(device)
 
     def chunkify_into_steps(self, data, steps):
         op = np.array([], dtype=np.float32)
@@ -385,21 +385,23 @@ class LatentSDEModel:
                     if j % steps == 0:
                         chunk = ensemble[j:j + steps]
                         if j == 0:
-                            big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+                            big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
                         else:
                             assert big_chunk.shape[1] == chunk.shape[0], f'shapes do not match for concatenation, {data.shape}, {steps}'
-                            big_chunk = np.append(big_chunk,
-                                                  np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
+                            big_chunk = torch.concatenate((big_chunk,
+                                                           torch.asarray(chunk).reshape(
+                                                               (1, chunk.shape[0], chunk.shape[1]))), dim=0)
                 if i == 0:
                     op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
                 else:
-                    op = np.append(op,
-                                   big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2])),
-                                   axis=0)
+                    op = torch.concatenate((op,
+                                            big_chunk.reshape(
+                                                (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
+                                           dim=0)
             op = torch.as_tensor(op)
             op = torch.permute(op, (0, 2, 1, 3))
         elif len(data.shape) == 2:
-            data = np.reshape(data, (data.shape[0], data.shape[1], 1))
+            data = torch.reshape(data, (data.shape[0], data.shape[1], 1))
             no_ensemble, no_states, state_dim = data.shape
             for i in range(no_ensemble):
                 ensemble = data[i]
@@ -408,10 +410,11 @@ class LatentSDEModel:
                     if j % steps == 0:
                         chunk = ensemble[j:j + steps]
                         if j == 0:
-                            big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+                            big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
                         else:
-                            big_chunk = np.append(big_chunk,
-                                                  np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
+                            big_chunk = torch.concatenate((big_chunk,
+                                                           torch.asarray(chunk).reshape(
+                                                               (1, chunk.shape[0], chunk.shape[1]))), dim=0)
                 if i == 0:
                     op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
                 else:
@@ -426,10 +429,11 @@ class LatentSDEModel:
                 if j % steps == 0:
                     chunk = data[j:j + steps]
                     if j == 0:
-                        big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+                        big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
                     else:
-                        big_chunk = np.append(big_chunk,
-                                              np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
+                        big_chunk = torch.concatenate((big_chunk,
+                                                       torch.asarray(chunk).reshape(
+                                                           (1, chunk.shape[0], chunk.shape[1]))), dim=0)
             op = torch.as_tensor(big_chunk)
             op = torch.permute(op, (1, 0, 2))
 
@@ -462,7 +466,7 @@ class LatentSDEModel:
         actions = self.batchify(actions, batch_size)
         z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(
             self.ensemble_model.pz0_mean)
-        z0 = torch.reshape(z0, (z0.shape[0], 1, z0.shape[1])).repeat(1, batch_size, 1)
+        z0 = torch.reshape(z0, (z0.shape[0], 1, z0.shape[1])).repeat(1, batch_size, 1).to(device)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, z0, batch_size).repeat([self.network_size, 1, 1])
-        assert not np.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
+        assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         return model_op
