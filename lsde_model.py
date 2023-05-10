@@ -104,14 +104,14 @@ class LatentSDE(nn.Module):
             nn.Linear(latent_size + context_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
 
@@ -129,7 +129,7 @@ class LatentSDE(nn.Module):
 
         self.projector = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, reward_size + data_size),
@@ -231,7 +231,7 @@ class LatentSDE(nn.Module):
     def train(self, loss):
         self.optimizer.zero_grad()
         loss.backward()
-        # torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
+        torch.nn.utils.clip_grad_norm_(parameters=self.parameters(), max_norm=10, norm_type=2.0)
         self.optimizer.step()
         self.scheduler.step()
         self.kl_scheduler.step()
@@ -253,7 +253,7 @@ class LatentSDE(nn.Module):
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm,
                                      method="reversible_heun")
-            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape} '
+            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape} , t_h {t_horizon}'
             xs_hat = self.projector(z_pred)
             assert not torch.isnan(xs_hat).any(), f'some pred state vector was nan, check projector'
             z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
@@ -279,7 +279,7 @@ class LatentSDEModel:
         self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size)
+        self.ensemble_model = LatentSDE(state_size, state_size + reward_size, 1, context_size, hidden_size, action_size)
         self.scaler = StandardScaler()
 
     def train(self, inputs, labels, actions, rewards, batch_size=256, holdout_ratio=0., max_epochs_since_update=5):
@@ -287,12 +287,12 @@ class LatentSDEModel:
         self._epochs_since_update = 0
         self._state = {}
         self._snapshots = {i: (None, 1e10) for i in range(self.network_size)}
-
+        steps_factor = 5
         num_holdout = int(inputs.shape[0] * holdout_ratio)
         # no permuting required for SDE models
         # permutation = np.random.permutation(inputs.shape[0])
         # inputs, labels = inputs[permutation], labels[permutation]
-
+        inputs, labels, rewards = inputs[: ((inputs.shape[0] // steps_factor) * steps_factor)], labels[: ((labels.shape[0] // steps_factor) * steps_factor)], rewards[: ((rewards.shape[0] // steps_factor) * steps_factor)]
         train_inputs, train_labels, train_rewards = inputs[num_holdout:], labels[num_holdout:], rewards[num_holdout:]
         train_actions_inputs = actions[num_holdout:]
         holdout_inputs, holdout_labels, holdout_rewards = inputs[:num_holdout], labels[:num_holdout], rewards[
@@ -303,6 +303,9 @@ class LatentSDEModel:
         train_inputs = self.scaler.transform(train_inputs)
         holdout_inputs = self.scaler.transform(holdout_inputs)
 
+        self.scaler.fit(train_actions_inputs)
+        train_actions_inputs = self.scaler.transform(train_actions_inputs)
+
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_rewards = torch.from_numpy(holdout_rewards).float().to(device)
@@ -311,14 +314,14 @@ class LatentSDEModel:
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
         holdout_rewards = holdout_rewards[None, :].repeat([self.network_size, 1])
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_steps = holdout_inputs.shape[1] // 5
+        holdout_steps = holdout_inputs.shape[1] // steps_factor
         holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         batch_size = 250
+        print(f'training model, train_size : {train_inputs.shape}')
         #todo itertools.count()
-        for epoch in tqdm.tqdm(itertools.count()):
-
+        for epoch in itertools.count():
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
             for start_pos in range(0, train_inputs.shape[0], batch_size):
@@ -329,7 +332,7 @@ class LatentSDEModel:
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 losses = []
                 # batch the data in steps of {steps} variable size
-                train_steps = train_input.shape[1] // 5
+                train_steps = train_input.shape[1] // steps_factor
 
                 train_input = self.chunkify_into_steps(train_input, train_steps)
                 train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
@@ -355,6 +358,7 @@ class LatentSDEModel:
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
+                    print(f'training model ended...')
                     break
 
     def batchify(self, data, batch_size):
@@ -383,6 +387,7 @@ class LatentSDEModel:
                         if j == 0:
                             big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
                         else:
+                            assert big_chunk.shape[1] == chunk.shape[0], f'shapes do not match for concatenation, {data.shape}, {steps}'
                             big_chunk = np.append(big_chunk,
                                                   np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
                 if i == 0:

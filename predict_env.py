@@ -55,7 +55,7 @@ class PredictEnv:
 
         ## [ num_networks, batch_size ]
         log_prob = -1 / 2 * (
-                    k * np.log(2 * np.pi) + np.log(variances).sum(-1) + (np.power(x - means, 2) / variances).sum(-1))
+                k * np.log(2 * np.pi) + np.log(variances).sum(-1) + (np.power(x - means, 2) / variances).sum(-1))
 
         ## [ batch_size ]
         prob = np.exp(log_prob).sum(0)
@@ -90,7 +90,7 @@ class PredictEnv:
         samples = ensemble_samples[model_idxes, batch_idxes]
         model_means = ensemble_model_means[model_idxes, batch_idxes]
 
-        #log_prob, dev = self._get_logprob(samples, ensemble_model_means)
+        # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
@@ -103,6 +103,6 @@ class PredictEnv:
             return_means = return_means[0]
             rewards = rewards[0]
             terminals = terminals[0]
-#'log_prob': log_prob, 'dev': dev
-        info = {'mean': return_means,}
+        # 'log_prob': log_prob, 'dev': dev
+        info = {'mean': return_means, }
         return next_obs, rewards, terminals, info
