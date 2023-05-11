@@ -1,0 +1,124 @@
+{
+    "os": "Linux-6.0.12-arch1-1-x86_64-with-glibc2.37",
+    "python": "3.10.9",
+    "heartbeatAt": "2023-05-11T02:31:20.759729",
+    "startedAt": "2023-05-11T02:31:19.065385",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--env_name",
+        "Hopper-v2",
+        "--num_epoch",
+        "300",
+        "--model_type",
+        "torchsde"
+    ],
+    "state": "running",
+    "program": "/home/vishwabrij/COMP5XX/lsde_mbrl/main_mbpo.py",
+    "codePath": "main_mbpo.py",
+    "git": {
+        "remote": "git@github.com:brijeshbv/lsde_mbrl.git",
+        "commit": "b185c9acafe906b55fedeaf1b49fee142aab8daf"
+    },
+    "email": null,
+    "root": "/home/vishwabrij/COMP5XX/lsde_mbrl",
+    "host": "hangar.ecs.vuw.ac.nz",
+    "username": "vishwabrij",
+    "executable": "/usr/pkg/bin/python3.10",
+    "cpu_count": 8,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 3468.557625,
+        "min": 800.0,
+        "max": 4800.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3599.973,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3600.007,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3600.73,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3600.001,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3604.7,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 2900.0,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3604.883,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 2900.0,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3599.914,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3594.837,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3600.003,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3599.927,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3600.013,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 2900.0,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3599.43,
+            "min": 800.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3601.985,
+            "min": 800.0,
+            "max": 4800.0
+        }
+    ],
+    "disk": {
+        "total": 83.48694610595703,
+        "used": 63.521366119384766
+    },
+    "memory": {
+        "total": 15.367244720458984
+    }
+}

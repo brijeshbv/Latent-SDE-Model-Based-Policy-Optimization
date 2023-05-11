@@ -10,6 +10,7 @@ import logging
 import os
 import os.path as osp
 import json
+import wandb
 
 from sac.replay_memory import ReplayMemory
 from sac.sac import SAC
@@ -62,13 +63,13 @@ def readParser():
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
                         help='retain epochs')
     #todo was 250
-    parser.add_argument('--model_train_freq', type=int, default=25, metavar='A',
+    parser.add_argument('--model_train_freq', type=int, default=50, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
     parser.add_argument('--rollout_batch_size', type=int, default=65536, metavar='A',
                         help='rollout number M')
     # todo was 1000
-    parser.add_argument('--epoch_length', type=int, default=200, metavar='A',
+    parser.add_argument('--epoch_length', type=int, default=100, metavar='A',
                         help='steps per epoch')
     parser.add_argument('--rollout_min_epoch', type=int, default=20, metavar='A',
                         help='rollout min epoch')
@@ -81,7 +82,7 @@ def readParser():
     parser.add_argument('--num_epoch', type=int, default=1000, metavar='A',
                         help='total number of epochs')
     #todo was 1000
-    parser.add_argument('--min_pool_size', type=int, default=1000, metavar='A',
+    parser.add_argument('--min_pool_size', type=int, default=250, metavar='A',
                         help='minimum pool size')
     parser.add_argument('--real_ratio', type=float, default=0.05, metavar='A',
                         help='ratio of env samples / model samples')
@@ -102,66 +103,14 @@ def readParser():
 
     parser.add_argument('--model_type', default='tensorflow', metavar='A',
                         help='predict model -- pytorch or tensorflow')
+    parser.add_argument('--wandb', default='yes', metavar='A',
+                        help='wandb log yes or no')
 
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
     return parser.parse_args()
 
 
-def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
-    total_step = 0
-    reward_sum = 0
-    rollout_length = 1
-    exploration_before_start(args, env_sampler, env_pool, agent)
-
-    for epoch_step in tqdm.tqdm(range(args.num_epoch)):
-        start_step = total_step
-        train_policy_steps = 0
-        for i in count():
-            cur_step = total_step - start_step
-
-            if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
-                break
-            if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env)
-
-                new_rollout_length = set_rollout_length(args, epoch_step)
-                if rollout_length != new_rollout_length:
-                    rollout_length = new_rollout_length
-                    model_pool = resize_model_pool(args, rollout_length, model_pool)
-
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
-
-            cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
-            env_pool.push(cur_state, action, reward, next_state, done)
-
-            if len(env_pool) > args.min_pool_size:
-                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
-
-            total_step += 1
-
-            if total_step % args.epoch_length == 0:
-                '''
-                avg_reward_len = min(len(env_sampler.path_rewards), 5)
-                avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len
-                logging.info("Step Reward: " + str(total_step) + " " + str(env_sampler.path_rewards[-1]) + " " + str(avg_reward))
-                print(total_step, env_sampler.path_rewards[-1], avg_reward)
-                '''
-                env_sampler.current_state = None
-                sum_reward = 0
-                done = False
-                test_step = 0
-
-                while (not done) and (test_step != args.max_path_length):
-                    cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
-                    sum_reward += reward
-                    test_step += 1
-                # logger.record_tabular("total_step", total_step)
-                # logger.record_tabular("sum_reward", sum_reward)
-                # logger.dump_tabular()
-                print(f'Steps: {total_step} , reward: {sum_reward}\n')
-                logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
-                # print(total_step, sum_reward)
 
 
 def exploration_before_start(args, env_sampler, env_pool, agent):
@@ -177,14 +126,14 @@ def set_rollout_length(args, epoch_step):
     return int(rollout_length)
 
 
-def train_predict_model(args, env_pool, predict_env):
+def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state = next_state - state
     inputs = state
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
 
-    predict_env.model.train(inputs, labels, action, reward, holdout_ratio=0.2)
+    predict_env.model.train(inputs, labels, action, reward,total_step, holdout_ratio=0.2)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -214,7 +163,6 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
 
 
 def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent):
-    print(f'training the agent')
     if total_step % args.train_every_n_steps > 0:
         return 0
 
@@ -268,11 +216,71 @@ class SingleEnvWrapper(gym.Wrapper):
         torso_height, torso_ang = self.env.sim.data.qpos[1:3]
         obs = np.append(obs, [torso_height, torso_ang])
         return obs
+def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
+    total_step = 0
+    reward_sum = 0
+    rollout_length = 1
+    exploration_before_start(args, env_sampler, env_pool, agent)
+
+    for epoch_step in tqdm.tqdm(range(args.num_epoch)):
+        start_step = total_step
+        train_policy_steps = 0
+        for i in count():
+            cur_step = total_step - start_step
+
+            if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
+                break
+            if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
+                train_predict_model(args, env_pool, predict_env, total_step)
+
+                new_rollout_length = set_rollout_length(args, epoch_step)
+                if rollout_length != new_rollout_length:
+                    rollout_length = new_rollout_length
+                    model_pool = resize_model_pool(args, rollout_length, model_pool)
+
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
+
+            cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
+            env_pool.push(cur_state, action, reward, next_state, done)
+
+            if len(env_pool) > args.min_pool_size:
+                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
+
+            total_step += 1
+            if total_step % 100 == 0:
+                print(f'Steps taken: {total_step}\n')
+            if total_step % args.epoch_length == 0:
+                '''
+                avg_reward_len = min(len(env_sampler.path_rewards), 5)
+                avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len
+                logging.info("Step Reward: " + str(total_step) + " " + str(env_sampler.path_rewards[-1]) + " " + str(avg_reward))
+                print(total_step, env_sampler.path_rewards[-1], avg_reward)
+                '''
+                env_sampler.current_state = None
+                sum_reward = 0
+                done = False
+                test_step = 0
+
+                while (not done) and (test_step != args.max_path_length):
+                    cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
+                    sum_reward += reward
+                    test_step += 1
+                # logger.record_tabular("total_step", total_step)
+                # logger.record_tabular("sum_reward", sum_reward)
+                # logger.dump_tabular()
+                if args.wandb != 'no':
+                    wandb.log({'reward': sum_reward},step = total_step)
+                print(f'Steps: {total_step} , reward: {sum_reward}\n')
+                logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
+                # print(total_step, sum_reward)
 
 
 def main(args=None):
     if args is None:
         args = readParser()
+    if args.wandb != 'no':
+        wandb.login()
+        wandb.init(project='lsde-mbrl')
 
     # Initial environment
     env = gym.make(args.env_name)

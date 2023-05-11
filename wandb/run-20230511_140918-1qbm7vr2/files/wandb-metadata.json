@@ -1,0 +1,180 @@
+{
+    "os": "Linux-6.0.12-arch1-1-x86_64-with-glibc2.17",
+    "python": "3.8.16",
+    "heartbeatAt": "2023-05-11T02:09:19.144041",
+    "startedAt": "2023-05-11T02:09:18.223640",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--env_name",
+        "Hopper-v2",
+        "--num_epoch",
+        "300",
+        "--model_type",
+        "torchsde"
+    ],
+    "state": "running",
+    "program": "main_mbpo.py",
+    "codePath": "main_mbpo.py",
+    "git": {
+        "remote": "git@github.com:brijeshbv/lsde_mbrl.git",
+        "commit": "b185c9acafe906b55fedeaf1b49fee142aab8daf"
+    },
+    "email": null,
+    "root": "/home/vishwabrij/COMP5XX/lsde_mbrl",
+    "host": "cuda10.ecs.vuw.ac.nz",
+    "username": "vishwabrij",
+    "executable": "/local/scratch/vishwabrij/miniconda3/envs/mbpo/bin/python",
+    "cpu_count": 12,
+    "cpu_count_logical": 24,
+    "cpu_freq": {
+        "current": 3646.1942916666667,
+        "min": 1200.0,
+        "max": 3700.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3699.987,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.002,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3326.368,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.997,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.006,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.996,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.995,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.001,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.998,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.992,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.0,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.0,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.0,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.992,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3326.311,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.004,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3700.009,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.996,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.997,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.991,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.989,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.998,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3699.997,
+            "min": 1200.0,
+            "max": 3700.0
+        },
+        {
+            "current": 3680.298,
+            "min": 1200.0,
+            "max": 3700.0
+        }
+    ],
+    "disk": {
+        "total": 88.40851593017578,
+        "used": 63.572303771972656
+    },
+    "gpu": "NVIDIA RTX A5000",
+    "gpu_count": 3,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA RTX A5000",
+            "memory_total": 25757220864
+        },
+        {
+            "name": "NVIDIA RTX A5000",
+            "memory_total": 25757220864
+        },
+        {
+            "name": "NVIDIA RTX A5000",
+            "memory_total": 25757220864
+        }
+    ],
+    "memory": {
+        "total": 125.58964157104492
+    }
+}
