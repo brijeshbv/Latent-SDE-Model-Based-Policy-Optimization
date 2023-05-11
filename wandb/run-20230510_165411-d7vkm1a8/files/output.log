@@ -1,0 +1,536 @@
+/local/scratch/vishwabrij/miniconda3/envs/mbpo/lib/python3.8/site-packages/gym/envs/registration.py:555: UserWarning: [33mWARN: The environment Hopper-v2 is out of date. You should consider upgrading to version `v4`.
+  logger.warn(
+/local/scratch/vishwabrij/miniconda3/envs/mbpo/lib/python3.8/site-packages/gym/envs/mujoco/mujoco_env.py:190: UserWarning: [33mWARN: This version of the mujoco environments depends on the mujoco-py bindings, which are no longer maintained and may stop working. Please upgrade to the v4 versions of the environments (which depend on the mujoco python bindings instead), unless you are trying to precisely replicate previous works).
+  logger.warn(
+  0%|                                                                                                                                                                                                               | 0/300 [00:00<?, ?it/s]/local/scratch/vishwabrij/miniconda3/envs/mbpo/lib/python3.8/site-packages/torchsde/_core/adjoint.py:253: UserWarning: The spacing between time points `ts` is not an integer multiple of the time step `dt`. This means that the backward pass (which is forced to step to each of `ts` to get dL/dy(t) for t in ts) will not perfectly mimick the forward pass (which does not step to each `ts`, and instead interpolates to them). This means that method='reversible_heun' may not be perfectly accurate.
+  warnings.warn(f"The spacing between time points `ts` is not an integer multiple of the time step `dt`. "
+training model, train_size : (4020, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+/local/scratch/vishwabrij/miniconda3/envs/mbpo/lib/python3.8/site-packages/torchsde/_brownian/brownian_interval.py:594: UserWarning: Should have tb<=t1 but got tb=0.10000000149011612 and t1=0.1.
+  warnings.warn(f"Should have {tb_name}<=t1 but got {tb_name}={tb} and t1={self._end}.")
+training model, train_size : (4040, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4060, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 100
+training model, train_size : (4080, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4100, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4120, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4140, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 200
+Steps: 200 , reward: 10.337715366092077
+  0%|▋                                                                                                                                                                                                | 1/300 [56:20<280:47:03, 3380.68s/it]
+training model, train_size : (4180, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4200, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4220, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 300
+training model, train_size : (4240, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4260, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4280, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4300, 11)
+training model ended...
+
+  1%|█▎                                                                                                                                                                                             | 2/300 [1:41:49<248:05:51, 2997.15s/it]
+Steps taken: 400
+Steps: 400 , reward: 5.777133365748232
+training model, train_size : (4340, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4360, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4380, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 500
+training model, train_size : (4400, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4420, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4440, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4460, 11)
+training model ended...
+
+  1%|█▉                                                                                                                                                                                             | 3/300 [2:34:44<253:58:25, 3078.47s/it]
+Steps taken: 600
+Steps: 600 , reward: 6.3286753095498485
+training model, train_size : (4500, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4520, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4540, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 700
+training model, train_size : (4560, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4580, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4600, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4620, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 800
+
+  1%|██▌                                                                                                                                                                                            | 4/300 [3:33:46<268:10:21, 3261.56s/it]
+training model, train_size : (4660, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4680, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4700, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 900
+training model, train_size : (4720, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4740, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4760, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4780, 11)
+training model ended...
+
+  2%|███▏                                                                                                                                                                                           | 5/300 [4:39:57<288:13:39, 3517.36s/it]
+Steps taken: 1000
+Steps: 1000 , reward: 30.44478325013779
+training model, train_size : (4820, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4840, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4860, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1100
+training model, train_size : (4880, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4900, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4920, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (4940, 11)
+training model ended...
+
+  2%|███▊                                                                                                                                                                                           | 6/300 [5:48:39<304:01:15, 3722.71s/it]
+Steps taken: 1200
+Steps: 1200 , reward: 52.16966497133468
+training model, train_size : (4980, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5000, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5020, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1300
+training model, train_size : (5040, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5060, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5080, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5100, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1400
+
+  2%|████▍                                                                                                                                                                                          | 7/300 [6:56:53<312:52:35, 3844.22s/it]
+training model, train_size : (5140, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5160, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5180, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1500
+training model, train_size : (5200, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5220, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5240, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5260, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1600
+
+  3%|█████                                                                                                                                                                                          | 8/300 [8:04:04<316:38:40, 3903.84s/it]
+training model, train_size : (5300, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5320, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5340, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1700
+training model, train_size : (5360, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5380, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5400, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5420, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+
+  3%|█████▋                                                                                                                                                                                         | 9/300 [9:20:49<333:16:00, 4122.89s/it]
+Steps: 1800 , reward: 162.47891908379736
+training model, train_size : (5460, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5480, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5500, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 1900
+training model, train_size : (5520, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5540, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5560, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5580, 11)
+training model ended...
+
+  3%|██████▎                                                                                                                                                                                      | 10/300 [10:28:39<330:47:49, 4106.45s/it]
+Steps taken: 2000
+Steps: 2000 , reward: 80.29756674288119
+training model, train_size : (5620, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5640, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5660, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2100
+training model, train_size : (5680, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5700, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5720, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5740, 11)
+training model ended...
+
+  4%|██████▉                                                                                                                                                                                      | 11/300 [11:38:03<331:04:05, 4124.03s/it]
+Steps taken: 2200
+Steps: 2200 , reward: 47.395687759842616
+training model, train_size : (5780, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5800, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5820, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2300
+training model, train_size : (5840, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5860, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5880, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5900, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+
+  4%|███████▌                                                                                                                                                                                     | 12/300 [12:37:04<315:44:41, 3946.81s/it]
+Steps: 2400 , reward: 106.43048487249965
+training model, train_size : (5940, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5960, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (5980, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2500
+training model, train_size : (6000, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6020, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6040, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6060, 11)
+training model ended...
+
+  4%|████████▏                                                                                                                                                                                    | 13/300 [13:37:07<306:20:44, 3842.66s/it]
+Steps taken: 2600
+Steps: 2600 , reward: 67.41089368451087
+training model, train_size : (6100, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6120, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6140, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2700
+training model, train_size : (6160, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6180, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6200, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6220, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2800
+
+  5%|████████▊                                                                                                                                                                                    | 14/300 [14:38:25<301:20:12, 3793.05s/it]
+training model, train_size : (6260, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6280, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6300, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 2900
+training model, train_size : (6320, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6340, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6360, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6380, 11)
+training model ended...
+
+  5%|█████████▍                                                                                                                                                                                   | 15/300 [15:41:33<300:08:33, 3791.28s/it]
+Steps taken: 3000
+Steps: 3000 , reward: 49.45117806670207
+training model, train_size : (6420, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6440, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6460, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3100
+training model, train_size : (6480, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6500, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6520, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6540, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+
+  5%|██████████                                                                                                                                                                                   | 16/300 [16:46:14<301:14:08, 3818.48s/it]
+Steps: 3200 , reward: 165.03536420349286
+training model, train_size : (6580, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6600, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6620, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3300
+training model, train_size : (6640, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6660, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6680, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6700, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3400
+
+  6%|██████████▋                                                                                                                                                                                  | 17/300 [17:52:29<303:52:22, 3865.52s/it]
+training model, train_size : (6740, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6760, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6780, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3500
+training model, train_size : (6800, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6820, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6840, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6860, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3600
+
+  6%|███████████▎                                                                                                                                                                                 | 18/300 [19:13:12<325:48:37, 4159.28s/it]
+training model, train_size : (6900, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6920, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6940, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3700
+training model, train_size : (6960, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (6980, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7000, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7020, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3800
+
+  6%|███████████▉                                                                                                                                                                                 | 19/300 [20:32:23<338:30:40, 4336.80s/it]
+training model, train_size : (7060, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7080, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7100, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 3900
+training model, train_size : (7120, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7140, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7160, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7180, 11)
+training model ended...
+
+  7%|████████████▌                                                                                                                                                                                | 20/300 [21:56:45<354:14:34, 4554.55s/it]
+Steps taken: 4000
+Steps: 4000 , reward: 115.54487527372413
+training model, train_size : (7220, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7240, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7260, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 4100
+training model, train_size : (7280, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7300, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7320, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+training model, train_size : (7340, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])
+Steps taken: 4200
+
+  7%|█████████████▏                                                                                                                                                                               | 21/300 [23:25:54<371:27:52, 4793.09s/it]
+training model, train_size : (7380, 11)
+training model ended...
+predicting samples, input_size: torch.Size([512, 128, 11])

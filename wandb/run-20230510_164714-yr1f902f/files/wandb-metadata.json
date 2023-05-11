@@ -1,0 +1,220 @@
+{
+    "os": "Linux-6.0.12-arch1-1-x86_64-with-glibc2.17",
+    "python": "3.8.16",
+    "heartbeatAt": "2023-05-10T04:47:15.199180",
+    "startedAt": "2023-05-10T04:47:14.206308",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--env_name",
+        "Hopper-v2",
+        "--num_epoch",
+        "300",
+        "--model_type",
+        "torchsde"
+    ],
+    "state": "running",
+    "program": "main_mbpo.py",
+    "codePath": "main_mbpo.py",
+    "git": {
+        "remote": "git@github.com:brijeshbv/lsde_mbrl.git",
+        "commit": "b185c9acafe906b55fedeaf1b49fee142aab8daf"
+    },
+    "email": null,
+    "root": "/home/vishwabrij/COMP5XX/lsde_mbrl",
+    "host": "cuda9.ecs.vuw.ac.nz",
+    "username": "vishwabrij",
+    "executable": "/local/scratch/vishwabrij/miniconda3/envs/mbpo/bin/python",
+    "cpu_count": 16,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 2148.15659375,
+        "min": 1200.0,
+        "max": 4400.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4193.332,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 3347.138,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1199.999,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1600.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 4270.949,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 3808.01,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 3655.301,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1800.218,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 4400.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 4400.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 4400.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 3500.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 2800.104,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 3500.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        },
+        {
+            "current": 1200.0,
+            "min": 1200.0,
+            "max": 4400.0
+        }
+    ],
+    "disk": {
+        "total": 88.40851593017578,
+        "used": 63.59951400756836
+    },
+    "gpu": "Quadro RTX 6000",
+    "gpu_count": 3,
+    "gpu_devices": [
+        {
+            "name": "Quadro RTX 6000",
+            "memory_total": 25769803776
+        },
+        {
+            "name": "Quadro RTX 6000",
+            "memory_total": 25769803776
+        },
+        {
+            "name": "Quadro RTX 6000",
+            "memory_total": 25769803776
+        }
+    ],
+    "memory": {
+        "total": 93.02016067504883
+    }
+}

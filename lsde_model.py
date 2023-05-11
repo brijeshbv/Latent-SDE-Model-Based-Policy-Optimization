@@ -8,6 +8,7 @@ from torch.distributions import Normal
 import torchsde
 import itertools
 import tqdm
+import wandb
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -165,7 +166,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions, rewards, adjoint=True, method="reversible_heun"):
+    def forward(self, xs, actions, rewards, total_step, adjoint=True, method="reversible_heun"):
         assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
@@ -220,6 +221,7 @@ class LatentSDE(nn.Module):
                 cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
         xs_dist = Normal(loc=predicted_xs, scale=noise_std)
         xs_target = torch.concatenate((xs, rewards), dim=2)
+        self.plot_gym_results(xs_target, predicted_xs, fname=f'results/plts/train_plt_{total_step}')
         log_pxs = xs_dist.log_prob(xs_target).sum(dim=(0, 2)).mean(dim=0)
 
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
@@ -227,6 +229,21 @@ class LatentSDE(nn.Module):
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
         logqp_path = cum_log_ratio.sum(dim=0).mean(dim=0)
         return log_pxs, logqp0 + logqp_path
+
+    @torch.no_grad()
+    def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+        tt = X.shape[1]
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D / 3).astype(int)
+        lag = X.shape[1] - Xrec.shape[1]
+        plt.figure(2, figsize=(20, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[idx, :, i].detach().numpy() , 'r.-')
+            plt.plot(range(lag, tt), Xrec[idx, :, i].detach().numpy() , 'b.-')
+        plt.savefig(f'{fname}-{idx}')
+        if show is False:
+            plt.close()
 
     def train(self, loss):
         self.optimizer.zero_grad()
@@ -282,7 +299,8 @@ class LatentSDEModel:
         self.ensemble_model = LatentSDE(state_size, state_size + reward_size, 1, context_size, hidden_size, action_size)
         self.scaler = StandardScaler()
 
-    def train(self, inputs, labels, actions, rewards, batch_size=256, holdout_ratio=0., max_epochs_since_update=5):
+    def train(self, inputs, labels, actions, rewards, total_step, batch_size=256, holdout_ratio=0.,
+              max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -292,7 +310,9 @@ class LatentSDEModel:
         # no permuting required for SDE models
         # permutation = np.random.permutation(inputs.shape[0])
         # inputs, labels = inputs[permutation], labels[permutation]
-        inputs, labels, rewards = inputs[: ((inputs.shape[0] // steps_factor) * steps_factor)], labels[: ((labels.shape[0] // steps_factor) * steps_factor)], rewards[: ((rewards.shape[0] // steps_factor) * steps_factor)]
+        inputs, labels, rewards = inputs[: ((inputs.shape[0] // steps_factor) * steps_factor)], labels[: (
+                    (labels.shape[0] // steps_factor) * steps_factor)], rewards[: (
+                    (rewards.shape[0] // steps_factor) * steps_factor)]
         train_inputs, train_labels, train_rewards = inputs[num_holdout:], labels[num_holdout:], rewards[num_holdout:]
         train_actions_inputs = actions[num_holdout:]
         holdout_inputs, holdout_labels, holdout_rewards = inputs[:num_holdout], labels[:num_holdout], rewards[
@@ -318,9 +338,9 @@ class LatentSDEModel:
         holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
-        batch_size = 250
+        batch_size = 500
         print(f'training model, train_size : {train_inputs.shape}')
-        #todo itertools.count()
+        # todo itertools.count()
         for epoch in itertools.count():
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -339,7 +359,8 @@ class LatentSDEModel:
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
-                    log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
+                    log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i],
+                                                              total_step)
                     loss = self.ensemble_model.loss(log_pxs, logqp_path)
                     self.ensemble_model.train(loss)
                     losses.append(loss)
@@ -350,7 +371,7 @@ class LatentSDEModel:
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
                     ho_log_pxs, ho_logqp_path = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i],
-                                                                    holdout_rewards[i])
+                                                                    holdout_rewards[i], total_step)
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
@@ -387,7 +408,8 @@ class LatentSDEModel:
                         if j == 0:
                             big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
                         else:
-                            assert big_chunk.shape[1] == chunk.shape[0], f'shapes do not match for concatenation, {data.shape}, {steps}'
+                            assert big_chunk.shape[1] == chunk.shape[
+                                0], f'shapes do not match for concatenation, {data.shape}, {steps}'
                             big_chunk = torch.concatenate((big_chunk,
                                                            torch.asarray(chunk).reshape(
                                                                (1, chunk.shape[0], chunk.shape[1]))), dim=0)
