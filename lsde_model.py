@@ -391,10 +391,10 @@ class LatentSDEModel:
                     train_reward_inp = predicted_xs.detach()
                     pred_reward = self.reward_model(train_reward_inp)
                     reward_loss = self.reward_model.loss(train_reward[i], pred_reward)
-                    if args.wandb != 'no':
-                        with torch.no_grad():
-                            wandb.log({'reward_loss': reward_loss.detach().cpu().numpy()}, step=total_step)
-                            wandb.log({'log_pxs': log_pxs}, step=total_step)
+                    # if args.wandb != 'no':
+                    #     with torch.no_grad():
+                    #         wandb.log({'reward_loss': reward_loss.detach().cpu().numpy()}, step=total_step)
+                    #         wandb.log({'log_pxs': log_pxs}, step=total_step)
                     self.reward_model.optimize(reward_loss)
                     loss = self.ensemble_model.loss(log_pxs, logqp_path)
                     self.ensemble_model.opt_loss(loss)
