@@ -88,7 +88,7 @@ class LatentSDE(nn.Module):
 
     def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
                  skip_every=1,
-                 t1=0.1, dt=0.05):
+                 t1=0.1, dt=0.01):
         super(LatentSDE, self).__init__()
         # hyper-parameters
         kl_anneal_iters = 700
@@ -104,6 +104,12 @@ class LatentSDE(nn.Module):
         self.skip_every = skip_every
         self.reward_size = reward_size
         self.latent_size = latent_size
+        self.reward_net = self.f_net = nn.Sequential(
+            nn.Linear(data_size, 10),
+            nn.ReLU(),
+            nn.Linear(10, 1),
+            nn.ReLU(),
+        )
         # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size , hidden_size),
@@ -137,7 +143,7 @@ class LatentSDE(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, reward_size + data_size),
+            nn.Linear(hidden_size, data_size),
         )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
@@ -149,7 +155,7 @@ class LatentSDE(nn.Module):
         self.optimizer = optim.Adam(params=self.parameters(), lr=lr_init)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=lr_gamma)
         self.kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
-
+        self.mse_loss = torch.nn.MSELoss()
     def contextualize(self, ctx):
         self._ctx = ctx  # A tuple of tensors of sizes (T,), (T, batch_size, d).
 
@@ -168,7 +174,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions, rewards, total_step, adjoint=True, method="reversible_heun"):
+    def forward(self, xs, actions, rewards, adjoint=True, method="reversible_heun"):
         assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
@@ -219,32 +225,18 @@ class LatentSDE(nn.Module):
             else:
                 cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
         xs_dist = Normal(loc=predicted_xs, scale=noise_std)
-        xs_target = torch.concatenate((xs, rewards), dim=2)
-        self.plot_gym_results(xs_target, predicted_xs, fname=f'results/plts/train_plt_{total_step}')
-        log_pxs = xs_dist.log_prob(xs_target).sum(dim=(0, 2)).mean(dim=0)
+        predicted_reward = self.reward_net(predicted_xs)
+        reward_loss = self.mse_loss(predicted_reward, rewards)
+        log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
 
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
         logqp_path = cum_log_ratio.sum(dim=0).mean(dim=0)
-        return log_pxs, logqp0 + logqp_path
+        return log_pxs, logqp0 + logqp_path, reward_loss, torch.concatenate((predicted_reward, predicted_xs), dim=2)
 
-    @torch.no_grad()
-    def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
-        tt = X.shape[1]
-        D = np.ceil(X.shape[2]).astype(int)
-        nrows = np.ceil(D / 3).astype(int)
-        lag = X.shape[1] - Xrec.shape[1]
-        plt.figure(2, figsize=(20, 40))
-        for i in range(D):
-            plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[idx, :, i].detach().numpy() , 'r.-')
-            plt.plot(range(lag, tt), Xrec[idx, :, i].detach().numpy() , 'b.-')
-        plt.savefig(f'{fname}-{idx}')
-        if show is False:
-            plt.close()
 
-    def train(self, loss):
+    def opt_loss(self, loss):
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(parameters=self.parameters(), max_norm=10, norm_type=2.0)
@@ -252,8 +244,8 @@ class LatentSDE(nn.Module):
         self.scheduler.step()
         self.kl_scheduler.step()
 
-    def loss(self, log_pxs, log_ratio):
-        loss = -log_pxs + log_ratio * self.kl_scheduler.val
+    def loss(self, log_pxs, log_ratio, reward_loss):
+        loss = -log_pxs + log_ratio * self.kl_scheduler.val + reward_loss
         return loss
 
     @torch.no_grad()
@@ -281,7 +273,8 @@ class LatentSDE(nn.Module):
                 predicted_xs = xs_hat[-1]
             else:
                 predicted_xs = torch.cat((predicted_xs, xs_hat[-1]), dim=0)
-        return predicted_xs
+            rewards = self.reward_net(predicted_xs)
+        return torch.concatenate((rewards, predicted_xs), dim=1)
 
 
 class LatentSDEModel:
@@ -299,8 +292,22 @@ class LatentSDEModel:
         self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size + reward_size, 1, context_size, hidden_size, action_size)
+        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size)
         self.scaler = StandardScaler()
+
+    def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+        tt = X.shape[0]
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D / 3).astype(int)
+        lag = X.shape[0] - Xrec.shape[0]
+        plt.figure(2, figsize=(20, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i +1)
+            plt.plot(range(0, tt), X[:, idx, i].detach().cpu().numpy() , 'r.-')
+            plt.plot(range(lag, tt), Xrec[:, idx, i].detach().cpu().numpy() , 'b.-')
+        plt.savefig(f'{fname}-{idx}')
+        if show is False:
+            plt.close()
 
     def train(self, inputs, labels, actions, rewards, total_step, batch_size=256, holdout_ratio=0.,
               max_epochs_since_update=5):
@@ -344,7 +351,8 @@ class LatentSDEModel:
         batch_size = 500
         print(f'training model, train_size : {train_inputs.shape}')
         # todo itertools.count()
-        for epoch in itertools.count():
+        train_count = 30
+        for epoch in range(train_count):
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
             for start_pos in range(0, train_inputs.shape[0], batch_size):
@@ -362,10 +370,9 @@ class LatentSDEModel:
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
-                    log_pxs, logqp_path = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i],
-                                                              total_step)
-                    loss = self.ensemble_model.loss(log_pxs, logqp_path)
-                    self.ensemble_model.train(loss)
+                    log_pxs, logqp_path, reward_loss, _ = self.ensemble_model(train_input[i], train_action_input[i], train_reward[i])
+                    loss = self.ensemble_model.loss(log_pxs, logqp_path, reward_loss)
+                    self.ensemble_model.opt_loss(loss)
                     losses.append(loss)
 
             with torch.no_grad():
@@ -373,11 +380,15 @@ class LatentSDEModel:
 
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
-                    ho_log_pxs, ho_logqp_path = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i],
-                                                                    holdout_rewards[i], total_step)
-                    holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
+                    ho_log_pxs, ho_logqp_path , mse_reward_loss, xs_pred = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i],
+                                                                    holdout_rewards[i])
+                    holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path, mse_reward_loss)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
+                if epoch % (train_count -1) == 0:
+                    target = torch.concatenate((holdout_rewards[train_input.shape[0]-1], holdout_inputs[train_input.shape[0]-1]), dim=1)
+                    self.plot_gym_results(target, xs_pred, fname=f'results/plts/train_plt_{total_step}')
+
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
