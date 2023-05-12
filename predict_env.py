@@ -85,7 +85,7 @@ class PredictEnv:
         else:
             return_single = False
 
-        ensemble_model_means = self.model.predict(obs, act).cpu().numpy()
+        ensemble_model_means = self.model.predict(obs, act).detach().cpu().numpy()
 
         ensemble_model_means[:, :, 1:] += obs
 

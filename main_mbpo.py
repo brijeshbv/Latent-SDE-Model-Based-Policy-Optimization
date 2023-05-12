@@ -133,7 +133,7 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     inputs = state
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
 
-    predict_env.model.train(inputs, labels, action, reward,total_step, holdout_ratio=0.2)
+    predict_env.model.train(args, inputs, labels, action, reward,total_step, holdout_ratio=0.2)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
