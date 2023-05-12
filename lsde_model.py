@@ -69,12 +69,16 @@ class LinearScheduler(object):
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Encoder, self).__init__()
-        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
-        self.lin = nn.Linear(hidden_size, output_size)
+        self.lin = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, output_size),
+        )
 
     def forward(self, inp):
-        out, _ = self.gru(inp)
-        out = self.lin(out)
+        out = self.lin(inp)
         return out
 
 
@@ -102,7 +106,7 @@ class LatentSDE(nn.Module):
         self.latent_size = latent_size
         # Decoder.
         self.f_net = nn.Sequential(
-            nn.Linear(latent_size + context_size, hidden_size),
+            nn.Linear(latent_size , hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
@@ -153,9 +157,7 @@ class LatentSDE(nn.Module):
         self.ti = i
 
     def f(self, t, y):
-        ctx, ts = self._ctx
-        i = min(torch.searchsorted(ts, t, right=True), len(ts) - 1)
-        return self.f_net(torch.cat((y, ctx[i]), dim=1))
+        return self.f_net(y)
 
     def h(self, t, y):
         out = self.h_net(y)
@@ -171,16 +173,13 @@ class LatentSDE(nn.Module):
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
-        # Contextualization is only needed for posterior inference.
-        ctx = self.encoder(torch.flip(xs, dims=(0,)))
-        ctx = torch.flip(ctx, dims=(0,))
-        ts_horizon = ts.permute((1, 0))
-        self.contextualize((ctx, ts_horizon[0]))
-        sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
-        qz0_mean, qz0_logstd = self.qz0_net(ctx[0]).chunk(chunks=2, dim=1)
+        ctx = self.encoder(xs[0])
+        qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=1)
         z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
 
+        ts_horizon = ts.permute((1, 0))
+        sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         xs_mean = self.projector(zs[-1, :, :])
 
         predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
@@ -258,17 +257,21 @@ class LatentSDE(nn.Module):
         return loss
 
     @torch.no_grad()
-    def sample_fromx0(self, xs, actions=None, z0=None, batch_size=32, steps=2):
+    def sample_fromx0(self, xs, actions=None, batch_size=32, steps=2):
         bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
+        eps = torch.randn(size=(xs.shape[1], *self.pz0_mean.shape[1:]), device=self.pz0_mean.device)
+        z0_mean, z0_sigma = self.qz0_net(self.encoder(xs[0])).chunk(chunks=2, dim=1)
+        z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
+        z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
         print(f'predicting samples, input_size: {xs.shape}')
         assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
         for i in range(xs.shape[0]):
             latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm,
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
                                      method="reversible_heun")
             assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape} , t_h {t_horizon}'
             xs_hat = self.projector(z_pred)
@@ -486,9 +489,6 @@ class LatentSDEModel:
     def predict(self, inputs, actions, batch_size=128, factored=True):
         inputs = self.batchify(inputs, batch_size)
         actions = self.batchify(actions, batch_size)
-        z0 = self.ensemble_model.pz0_mean + self.ensemble_model.pz0_logstd.exp() * torch.randn_like(
-            self.ensemble_model.pz0_mean)
-        z0 = torch.reshape(z0, (z0.shape[0], 1, z0.shape[1])).repeat(1, batch_size, 1).to(device)
-        model_op = self.ensemble_model.sample_fromx0(inputs, actions, z0, batch_size).repeat([self.network_size, 1, 1])
+        model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         return model_op
