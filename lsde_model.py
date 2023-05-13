@@ -433,7 +433,8 @@ class LatentSDEModel:
                     big_chunk = np.append(big_chunk,
                                           np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
             elif j % batch_size == 0 and (j + batch_size) > no_batches:
-                flow_over = data[j:j + batch_size]
+                chunk = data[j:j + batch_size]
+                flow_over = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
 
         return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
                                                                                        dtype=torch.float32).to(device)
