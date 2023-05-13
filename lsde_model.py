@@ -531,6 +531,7 @@ class LatentSDEModel:
             return False
 
     def predict(self, inputs, actions, batch_size=128):
+        og_batches, og_dim = inputs.shape
         inputs, flow_over_inp = self.batchify(inputs, batch_size)
         actions, flow_over_actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
@@ -541,5 +542,5 @@ class LatentSDEModel:
             model_op = torch.concatenate((model_op, model_op_extra), dim=1)
             model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
-        assert model_op.shape[1] == inputs.shape[0] * inputs.shape[1], f'some predictions were lost'
+        assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
         return torch.concatenate((model_rewards, model_op), dim=2)
