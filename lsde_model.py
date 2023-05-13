@@ -293,7 +293,7 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200,
+    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=64,
                  context_size=64):
         self._snapshots = None
         self._state = None
