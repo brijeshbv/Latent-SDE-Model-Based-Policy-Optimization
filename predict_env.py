@@ -84,9 +84,10 @@ class PredictEnv:
             return_single = True
         else:
             return_single = False
-
-        ensemble_model_means = self.model.predict(obs, act).detach().cpu().numpy()
-
+        batch_size = 128
+        ensemble_model_means = self.model.predict(obs, act, batch_size=batch_size).detach().cpu().numpy()
+        no_batches = obs.shape[0] // batch_size
+        obs = obs[:no_batches * batch_size, :]
         ensemble_model_means[:, :, 1:] += obs
 
         ensemble_samples = ensemble_model_means

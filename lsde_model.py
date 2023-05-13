@@ -423,7 +423,7 @@ class LatentSDEModel:
         no_batches, dim = data.shape
         big_chunk = np.array([], dtype=np.float32)
         for j in range(no_batches):
-            if j % batch_size == 0 and (j + batch_size) < no_batches:
+            if j % batch_size == 0 and (j + batch_size) <= no_batches:
                 chunk = data[j:j + batch_size]
                 if j == 0:
                     big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
