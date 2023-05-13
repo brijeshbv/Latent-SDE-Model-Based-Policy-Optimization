@@ -420,10 +420,10 @@ class LatentSDEModel:
                     break
 
     def batchify(self, data, batch_size):
-        batches, dim = data.shape
+        no_batches, dim = data.shape
         big_chunk = np.array([], dtype=np.float32)
-        for j in range(batches):
-            if j % batch_size == 0:
+        for j in range(no_batches):
+            if j % batch_size == 0 and (j + batch_size) < no_batches:
                 chunk = data[j:j + batch_size]
                 if j == 0:
                     big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
@@ -438,8 +438,9 @@ class LatentSDEModel:
             no_ensemble, no_states, state_dim = data.shape
             for i in range(no_ensemble):
                 ensemble = data[i]
+                ensemble_size = ensemble.shape[0]
                 big_chunk = np.array([], dtype=np.float32)
-                for j in range(ensemble.shape[0]):
+                for j in range(ensemble_size):
                     if j % steps == 0:
                         chunk = ensemble[j:j + steps]
                         if j == 0:
@@ -464,8 +465,9 @@ class LatentSDEModel:
             no_ensemble, no_states, state_dim = data.shape
             for i in range(no_ensemble):
                 ensemble = data[i]
+                ensemble_size = ensemble.shape[0]
                 big_chunk = np.array([], dtype=np.float32)
-                for j in range(ensemble.shape[0]):
+                for j in range(ensemble_size):
                     if j % steps == 0:
                         chunk = ensemble[j:j + steps]
                         if j == 0:
@@ -484,7 +486,8 @@ class LatentSDEModel:
             op = torch.permute(op, (0, 2, 1, 3))
         else:
             big_chunk = np.array([], dtype=np.float32)
-            for j in range(data.shape[0]):
+            no_data = data.shape[0]
+            for j in range(no_data):
                 if j % steps == 0:
                     chunk = data[j:j + steps]
                     if j == 0:
@@ -520,7 +523,7 @@ class LatentSDEModel:
         else:
             return False
 
-    def predict(self, inputs, actions, batch_size=128, factored=True):
+    def predict(self, inputs, actions, batch_size=128):
         inputs = self.batchify(inputs, batch_size)
         actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
