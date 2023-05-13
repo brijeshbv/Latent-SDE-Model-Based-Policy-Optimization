@@ -325,7 +325,7 @@ class LatentSDEModel:
         if show is False:
             plt.close()
 
-    def train(self, args,  inputs, labels, actions, rewards, total_step, batch_size=256, holdout_ratio=0.,
+    def train(self, args, inputs, labels, actions, rewards, total_step, batch_size=256, holdout_ratio=0.,
               max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
@@ -376,7 +376,6 @@ class LatentSDEModel:
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
                 train_reward = torch.from_numpy(train_rewards[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
-                train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 losses = []
                 # batch the data in steps of {steps} variable size
                 train_steps = train_input.shape[1] // steps_factor
@@ -405,12 +404,14 @@ class LatentSDEModel:
 
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
-                    ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs[i], holdout_actions_inputs[i])
+                    ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs[i],
+                                                                             holdout_actions_inputs[i])
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
                 if epoch % (train_count - 1) == 0:
-                    self.plot_gym_results(holdout_inputs[train_input.shape[0] - 1], xs_pred, fname=f'results/plts/train_plt_{total_step}')
+                    self.plot_gym_results(holdout_inputs[train_input.shape[0] - 1], xs_pred,
+                                          fname=f'results/plts/train_plt_{total_step}')
 
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
@@ -422,6 +423,7 @@ class LatentSDEModel:
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
         big_chunk = np.array([], dtype=np.float32)
+        flow_over = np.array([], dtype=np.float32)
         for j in range(no_batches):
             if j % batch_size == 0 and (j + batch_size) <= no_batches:
                 chunk = data[j:j + batch_size]
@@ -430,7 +432,11 @@ class LatentSDEModel:
                 else:
                     big_chunk = np.append(big_chunk,
                                           np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
-        return torch.asarray(big_chunk, dtype=torch.float32).to(device)
+            elif j % batch_size == 0 and (j + batch_size) > no_batches:
+                flow_over = data[j:j + batch_size]
+
+        return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
+                                                                                       dtype=torch.float32).to(device)
 
     def chunkify_into_steps(self, data, steps):
         op = np.array([], dtype=np.float32)
@@ -524,9 +530,15 @@ class LatentSDEModel:
             return False
 
     def predict(self, inputs, actions, batch_size=128):
-        inputs = self.batchify(inputs, batch_size)
-        actions = self.batchify(actions, batch_size)
+        inputs, flow_over_inp = self.batchify(inputs, batch_size)
+        actions, flow_over_actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
         model_rewards = self.reward_model(model_op)
+        if len(flow_over_inp) > 0:
+            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions, batch_size).repeat([self.network_size, 1, 1])
+            model_rewards_extra = self.reward_model(model_op_extra)
+            model_op = torch.concatenate((model_op, model_op_extra), dim=1)
+            model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
+        assert model_op.shape[1] == inputs.shape[0] * inputs.shape[1], f'some predictions were lost'
         return torch.concatenate((model_rewards, model_op), dim=2)
