@@ -536,7 +536,7 @@ class LatentSDEModel:
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
         model_rewards = self.reward_model(model_op)
         if len(flow_over_inp) > 0:
-            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions, batch_size).repeat([self.network_size, 1, 1])
+            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions, flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
             model_rewards_extra = self.reward_model(model_op_extra)
             model_op = torch.concatenate((model_op, model_op_extra), dim=1)
             model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
