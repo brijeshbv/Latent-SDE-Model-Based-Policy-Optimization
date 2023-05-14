@@ -347,10 +347,14 @@ class LatentSDEModel:
 
         self.scaler.fit(train_inputs)
         train_inputs = self.scaler.transform(train_inputs)
+        self.scaler.fit(holdout_inputs)
         holdout_inputs = self.scaler.transform(holdout_inputs)
 
         self.scaler.fit(train_actions_inputs)
         train_actions_inputs = self.scaler.transform(train_actions_inputs)
+        self.scaler.fit(holdout_actions_inputs)
+        holdout_actions_inputs = self.scaler.transform(holdout_actions_inputs)
+
 
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
