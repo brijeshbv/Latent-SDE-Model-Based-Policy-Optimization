@@ -86,9 +86,9 @@ class RewardNet(nn.Module):
     def __init__(self, data_size):
         super(RewardNet, self).__init__()
         self.reward_net = self.f_net = nn.Sequential(
-            nn.Linear(data_size, 10),
-            nn.ReLU(),
-            nn.Linear(10, 1),
+            nn.Linear(data_size, 5),
+            nn.Tanh(),
+            nn.Linear(5, 1),
             nn.ReLU(),
         )
         self.mse_loss = torch.nn.MSELoss()
@@ -282,7 +282,7 @@ class LatentSDE(nn.Module):
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
                                      method="reversible_heun")
-            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape} , t_h {t_horizon}'
+            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 1, torch.argwhere(torch.isnan(z_pred[-1])))}'
             xs_hat = self.projector(z_pred)
             z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
             if i == 0:
@@ -314,9 +314,9 @@ class LatentSDEModel:
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = X.shape[0]
         D = np.ceil(X.shape[2]).astype(int)
-        nrows = np.ceil(D / 3).astype(int)
+        nrows = np.ceil(D).astype(int)
         lag = X.shape[0] - Xrec.shape[0]
-        plt.figure(2, figsize=(20, 40))
+        plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[:, idx, i].detach().cpu().numpy(), 'r.-')
@@ -409,6 +409,8 @@ class LatentSDEModel:
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
+                holdout_reward_pred = self.reward_model(xs_pred)
+                self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred, fname=f'results/plts/train_plt_rwd_{total_step}')
                 if epoch % (train_count - 1) == 0:
                     self.plot_gym_results(holdout_inputs[train_input.shape[0] - 1], xs_pred,
                                           fname=f'results/plts/train_plt_{total_step}')
@@ -416,9 +418,9 @@ class LatentSDEModel:
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                if break_train:
-                    print(f'training model ended...')
-                    break
+                # if break_train:
+                #     print(f'training model ended...')
+                #     break
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
@@ -531,6 +533,11 @@ class LatentSDEModel:
             return False
 
     def predict(self, inputs, actions, batch_size=128):
+        assert len(inputs) > 0, f'predict input is empty'
+        self.scaler.fit(inputs)
+        inputs = self.scaler.transform(inputs)
+        self.scaler.fit(actions)
+        actions = self.scaler.transform(actions)
         og_batches, og_dim = inputs.shape
         inputs, flow_over_inp = self.batchify(inputs, batch_size)
         actions, flow_over_actions = self.batchify(actions, batch_size)
