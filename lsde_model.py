@@ -196,7 +196,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions, adjoint=True, method="reversible_heun"):
+    def forward(self, xs, actions,xs_target, adjoint=True, method="reversible_heun"):
         assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
@@ -247,7 +247,7 @@ class LatentSDE(nn.Module):
             else:
                 cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
         xs_dist = Normal(loc=predicted_xs, scale=noise_std)
-        log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
+        log_pxs = xs_dist.log_prob(xs_target).sum(dim=(0, 2)).mean(dim=0)
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
@@ -368,6 +368,7 @@ class LatentSDEModel:
         holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
+        holdout_labels =  self.chunkify_into_steps(holdout_labels, holdout_steps)
         batch_size = 500
         print(f'training model, train_size : {train_inputs.shape}')
         # todo itertools.count()
@@ -379,6 +380,7 @@ class LatentSDEModel:
                 idx = train_idx[:, start_pos: start_pos + batch_size]
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
                 train_reward = torch.from_numpy(train_rewards[idx]).float().to(device)
+                train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
                 # batch the data in steps of {steps} variable size
@@ -387,9 +389,10 @@ class LatentSDEModel:
                 train_input = self.chunkify_into_steps(train_input, train_steps)
                 train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
                 train_reward = self.chunkify_into_steps(train_reward, train_steps)
+                train_label = self.chunkify_into_steps(train_label, train_steps)
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
-                    log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input[i], train_action_input[i])
+                    log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input[i], train_action_input[i], train_label[i])
 
                     train_reward_inp = predicted_xs.detach()
                     pred_reward = self.reward_model(train_reward_inp)
@@ -409,14 +412,14 @@ class LatentSDEModel:
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
                     ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs[i],
-                                                                             holdout_actions_inputs[i])
+                                                                             holdout_actions_inputs[i], holdout_labels[i])
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
                 holdout_reward_pred = self.reward_model(xs_pred)
                 self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred, fname=f'results/plts/train_plt_rwd_{total_step}')
                 if epoch % (train_count - 1) == 0:
-                    self.plot_gym_results(holdout_inputs[train_input.shape[0] - 1], xs_pred,
+                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
                                           fname=f'results/plts/train_plt_{total_step}')
 
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
