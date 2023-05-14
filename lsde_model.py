@@ -282,7 +282,7 @@ class LatentSDE(nn.Module):
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
                                      method="reversible_heun")
-            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 1, torch.argwhere(torch.isnan(z_pred[-1])))}'
+            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
             xs_hat = self.projector(z_pred)
             z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
             if i == 0:
