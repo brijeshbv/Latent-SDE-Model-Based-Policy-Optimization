@@ -1,3 +1,6 @@
 data
 .idea
 *__pycache__*
+*.png
+results/*
+wandb/*
