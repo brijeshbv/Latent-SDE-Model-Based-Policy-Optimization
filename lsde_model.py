@@ -86,10 +86,10 @@ class RewardNet(nn.Module):
     def __init__(self, data_size):
         super(RewardNet, self).__init__()
         self.reward_net = self.f_net = nn.Sequential(
-            nn.Linear(data_size, 5),
+            nn.Linear(data_size, 100),
+            nn.Linear(100, 25),
             nn.Tanh(),
-            nn.Linear(5, 1),
-            nn.ReLU(),
+            nn.Linear(25, 1),
         )
         self.mse_loss = torch.nn.MSELoss()
         self.optim = optim.Adam(params=self.parameters(), lr=1e-3)
@@ -271,12 +271,12 @@ class LatentSDE(nn.Module):
         bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
-        z0_mean, z0_sigma = self.qz0_net(self.encoder(xs[0])).chunk(chunks=2, dim=1)
-        z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
-        z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
         print(f'predicting samples, input_size: {xs.shape}')
-        assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
         for i in range(xs.shape[0]):
+            z0_mean, z0_sigma = self.qz0_net(self.encoder(xs[i])).chunk(chunks=2, dim=1)
+            z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
+            z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
+            assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
             latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
@@ -284,7 +284,6 @@ class LatentSDE(nn.Module):
                                      method="reversible_heun")
             assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
             xs_hat = self.projector(z_pred)
-            z0 = z_pred[-1].reshape((1, z_pred.shape[1], z_pred.shape[2]))
             if i == 0:
                 predicted_xs = xs_hat[-1]
             else:
@@ -369,10 +368,10 @@ class LatentSDEModel:
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
         holdout_labels =  self.chunkify_into_steps(holdout_labels, holdout_steps)
-        batch_size = 500
+        batch_size = 50
         print(f'training model, train_size : {train_inputs.shape}')
         # todo itertools.count()
-        train_count = 30
+        train_count= 40
         for epoch in range(train_count):
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -417,14 +416,16 @@ class LatentSDEModel:
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
                 holdout_reward_pred = self.reward_model(xs_pred)
-                self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred, fname=f'results/plts/train_plt_rwd_{total_step}')
-                if epoch % (train_count - 1) == 0:
-                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                                          fname=f'results/plts/train_plt_{total_step}')
 
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
+                if epoch % (train_count -1):
+                    self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
+                                          fname=f'results/plts3/train_plt_rwd_{total_step}')
+
+                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
+                                          fname=f'results/plts3/train_plt_{total_step}')
                 # if break_train:
                 #     print(f'training model ended...')
                 #     break
