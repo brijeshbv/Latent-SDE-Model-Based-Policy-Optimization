@@ -83,11 +83,13 @@ class Encoder(nn.Module):
 
 
 class RewardNet(nn.Module):
-    def __init__(self, data_size):
+    def __init__(self, data_size, action_size):
         super(RewardNet, self).__init__()
         self.reward_net = self.f_net = nn.Sequential(
-            nn.Linear(data_size, 100),
-            nn.Linear(100, 25),
+            nn.Linear(data_size + action_size, 100),
+            nn.Linear(100, 50),
+            nn.ReLU(),
+            nn.Linear(50, 25),
             nn.Tanh(),
             nn.Linear(25, 1),
         )
@@ -114,11 +116,11 @@ class LatentSDE(nn.Module):
 
     def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
                  skip_every=1,
-                 t1=0.1, dt=0.01):
+                 t1=0.5, dt=0.1):
         super(LatentSDE, self).__init__()
         # hyper-parameters
         kl_anneal_iters = 700
-        lr_init = 1e-3
+        lr_init = 0.5e-3
         lr_gamma = 0.9997
 
         # Encoder.
@@ -196,7 +198,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions,xs_target, adjoint=True, method="reversible_heun"):
+    def forward(self, xs, actions, xs_target, adjoint=True, method="reversible_heun"):
         assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
@@ -222,18 +224,15 @@ class LatentSDE(nn.Module):
                 t_horizon = ts_horizon[0][i: i + self.skip_every + 1]
             else:
                 t_horizon = ts_horizon[0][i: i + self.skip_every]
-            if adjoint:
-                # Must use the argument `adjoint_params`, since `ctx` is not part of the input to `f`, `g`, and `h`.
-                adjoint_params = (
-                        (ctx,) +
-                        tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
-                    self.h_net.parameters()))
-                z_pred, log_ratio = torchsde.sdeint_adjoint(
-                    self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
-                    adjoint_method='adjoint_reversible_heun')
-            else:
-                z_pred, log_ratio = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, logqp=True, method=method)
-            xs_mean = self.projector(z_pred)
+
+            adjoint_params = (
+                    (ctx,) +
+                    tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
+                self.h_net.parameters()))
+            z_pred, log_ratio = torchsde.sdeint_adjoint(
+                self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
+                adjoint_method='adjoint_reversible_heun')
+
             if i == 0:
                 predicted_xs = xs_mean
                 zs = z_pred
@@ -282,7 +281,8 @@ class LatentSDE(nn.Module):
             assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
                                      method="reversible_heun")
-            assert not torch.isnan(z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
+            assert not torch.isnan(
+                z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
             xs_hat = self.projector(z_pred)
             if i == 0:
                 predicted_xs = xs_hat[-1]
@@ -307,7 +307,7 @@ class LatentSDEModel:
         self.network_size = network_size
         self.elite_model_idxes = []
         self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size)
-        self.reward_model = RewardNet(data_size=state_size)
+        self.reward_model = RewardNet(data_size=state_size, action_size=action_size)
         self.scaler = StandardScaler()
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
@@ -318,8 +318,8 @@ class LatentSDEModel:
         plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[:, idx, i].detach().cpu().numpy(), 'r.-')
-            plt.plot(range(lag, tt), Xrec[:, idx, i].detach().cpu().numpy(), 'b.-')
+            plt.plot(range(0, tt), X[:tt, idx, i].detach().cpu().numpy(), 'r.-')
+            plt.plot(range(lag, tt), Xrec[:tt, idx, i].detach().cpu().numpy(), 'b.-')
         plt.savefig(f'{fname}-{idx}')
         if show is False:
             plt.close()
@@ -354,7 +354,6 @@ class LatentSDEModel:
         self.scaler.fit(holdout_actions_inputs)
         holdout_actions_inputs = self.scaler.transform(holdout_actions_inputs)
 
-
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_rewards = torch.from_numpy(holdout_rewards).float().to(device)
@@ -367,11 +366,11 @@ class LatentSDEModel:
         holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
         holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
         holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
-        holdout_labels =  self.chunkify_into_steps(holdout_labels, holdout_steps)
+        holdout_labels = self.chunkify_into_steps(holdout_labels, holdout_steps)
         batch_size = 50
         print(f'training model, train_size : {train_inputs.shape}')
         # todo itertools.count()
-        train_count= 40
+        train_count = 40
         for epoch in range(train_count):
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
@@ -391,9 +390,10 @@ class LatentSDEModel:
                 train_label = self.chunkify_into_steps(train_label, train_steps)
                 for i in range(train_input.shape[0]):
                     assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
-                    log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input[i], train_action_input[i], train_label[i])
+                    log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input[i], train_action_input[i],
+                                                                            train_label[i])
 
-                    train_reward_inp = predicted_xs.detach()
+                    train_reward_inp = torch.concatenate((train_input[i], train_action_input[i]), dim=2)
                     pred_reward = self.reward_model(train_reward_inp)
                     reward_loss = self.reward_model.loss(train_reward[i], pred_reward)
                     # if args.wandb != 'no':
@@ -411,22 +411,29 @@ class LatentSDEModel:
                 holdout_mse_losses = np.asarray([])
                 for i in range(train_input.shape[0]):
                     ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs[i],
-                                                                             holdout_actions_inputs[i], holdout_labels[i])
+                                                                             holdout_actions_inputs[i],
+                                                                             holdout_labels[i])
                     holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
                     holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
                     holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
-                holdout_reward_pred = self.reward_model(xs_pred)
+                    train_reward_inp = torch.concatenate((holdout_inputs[i], holdout_actions_inputs[i]), dim=2)
+                    holdout_reward_pred = self.reward_model(train_reward_inp)
 
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                if epoch % (train_count -1):
+                if epoch % (train_count - 1):
                     self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
-                                          fname=f'results/plts3/train_plt_rwd_{total_step}')
+                                          fname=f'results/plts/train_plt_rwd_{total_step}')
 
                     self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                                          fname=f'results/plts3/train_plt_{total_step}')
+                                          fname=f'results/plts/train_plt_{total_step}')
                 # if break_train:
+                #     self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
+                #                           fname=f'results/plts3/train_plt_rwd_{total_step}')
+                #
+                #     self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
+                #                           fname=f'results/plts3/train_plt_{total_step}')
                 #     print(f'training model ended...')
                 #     break
 
@@ -496,9 +503,10 @@ class LatentSDEModel:
                 if i == 0:
                     op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
                 else:
-                    op = np.append(op,
-                                   big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2])),
-                                   axis=0)
+                    op = torch.concatenate((op,
+                                            big_chunk.reshape(
+                                                (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
+                                           dim=0)
             op = torch.as_tensor(op)
             op = torch.permute(op, (0, 2, 1, 3))
         else:
@@ -543,19 +551,22 @@ class LatentSDEModel:
     def predict(self, inputs, actions, batch_size=128):
         assert len(inputs) > 0, f'predict input is empty'
         self.scaler.fit(inputs)
-        inputs = self.scaler.transform(inputs)
+        inputs = torch.asarray(self.scaler.transform(inputs), dtype=torch.float32)
         self.scaler.fit(actions)
-        actions = self.scaler.transform(actions)
+        actions = torch.asarray(self.scaler.transform(actions), dtype=torch.float32)
+
+        reward_inp = torch.concatenate((inputs, actions), dim=1)
+        model_rewards = self.reward_model(reward_inp).repeat([self.network_size, 1, 1])
         og_batches, og_dim = inputs.shape
         inputs, flow_over_inp = self.batchify(inputs, batch_size)
         actions, flow_over_actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
-        model_rewards = self.reward_model(model_op)
         if len(flow_over_inp) > 0:
-            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions, flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
+            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions,
+                                                               flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
             model_rewards_extra = self.reward_model(model_op_extra)
             model_op = torch.concatenate((model_op, model_op_extra), dim=1)
-            model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
+            # model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
         return torch.concatenate((model_rewards, model_op), dim=2)
