@@ -48,7 +48,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     #todo was 7
-    parser.add_argument('--num_networks', type=int, default=1, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -63,13 +63,13 @@ def readParser():
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
                         help='retain epochs')
     #todo was 250
-    parser.add_argument('--model_train_freq', type=int, default=50, metavar='A',
+    parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
     parser.add_argument('--rollout_batch_size', type=int, default=65536, metavar='A',
                         help='rollout number M')
     # todo was 1000
-    parser.add_argument('--epoch_length', type=int, default=100, metavar='A',
+    parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
                         help='steps per epoch')
     parser.add_argument('--rollout_min_epoch', type=int, default=20, metavar='A',
                         help='rollout min epoch')
@@ -82,7 +82,7 @@ def readParser():
     parser.add_argument('--num_epoch', type=int, default=1000, metavar='A',
                         help='total number of epochs')
     #todo was 1000
-    parser.add_argument('--min_pool_size', type=int, default=250, metavar='A',
+    parser.add_argument('--min_pool_size', type=int, default=1000, metavar='A',
                         help='minimum pool size')
     parser.add_argument('--real_ratio', type=float, default=0.05, metavar='A',
                         help='ratio of env samples / model samples')
