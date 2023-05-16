@@ -105,9 +105,11 @@ def readParser():
                         help='predict model -- pytorch or tensorflow')
     parser.add_argument('--wandb', default='yes', metavar='A',
                         help='wandb log yes or no')
-
+    parser.add_argument('--resdir', default="plts",metavar='A',
+                        help='results directory')
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
+
     return parser.parse_args()
 
 

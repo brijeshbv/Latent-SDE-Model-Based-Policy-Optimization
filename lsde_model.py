@@ -262,28 +262,25 @@ class LatentSDE(nn.Module):
 
     @torch.no_grad()
     def sample_fromx0(self, xs, actions=None, batch_size=32, steps=2):
-        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(batch_size, self.latent_size,), device=device,
+        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0], self.latent_size,), device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
         print(f'predicting samples, input_size: {xs.shape}')
-        for i in range(xs.shape[0]):
-            z0_mean, z0_sigma = self.qz0_net(self.encoder(xs[i])).chunk(chunks=2, dim=1)
-            z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
-            z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
-            assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
-            latent_and_data = torch.cat((z0[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
-            z_encoded = self.action_encode_net(latent_and_data)
-            assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
-                                     method="reversible_heun")
-            assert not torch.isnan(
-                z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
-            xs_hat = self.projector(z_pred)
-            if i == 0:
-                predicted_xs = xs_hat[-1]
-            else:
-                predicted_xs = torch.cat((predicted_xs, xs_hat[-1]), dim=0)
-        return predicted_xs
+
+        z0_mean, z0_sigma = self.qz0_net(self.encoder(xs)).chunk(chunks=2, dim=1)
+        z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
+        z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
+        assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
+        latent_and_data = torch.cat((z0[-1, :, :], actions[:,  :], xs[:, :]), dim=1)
+        z_encoded = self.action_encode_net(latent_and_data)
+        assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
+        z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
+                                 method="reversible_heun")
+        assert not torch.isnan(
+            z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
+        xs_hat = self.projector(z_pred[-1])
+
+        return xs_hat
 
 
 class LatentSDEModel:
@@ -306,7 +303,7 @@ class LatentSDEModel:
         self.scaler = StandardScaler()
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
-        tt = X.shape[0]
+        tt = X.shape[0] // 5
         D = np.ceil(X.shape[1]).astype(int)
         nrows = np.ceil(D).astype(int)
         lag = X.shape[0] - Xrec.shape[0]
@@ -353,7 +350,7 @@ class LatentSDEModel:
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_rewards = torch.from_numpy(holdout_rewards).float().to(device)
         holdout_actions_inputs = torch.from_numpy(holdout_actions_inputs).float().to(device)
-        batch_size = train_inputs.shape[0] // 2
+        batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
         for epoch in itertools.count():
             train_idx = torch.arange(train_inputs.shape[0])
@@ -369,7 +366,7 @@ class LatentSDEModel:
 
                 train_reward_inp = torch.concatenate((train_input, train_action_input), dim=1)
                 pred_reward = self.reward_model(train_reward_inp)
-                reward_loss = self.reward_model.loss(train_reward, pred_reward)
+                reward_loss = self.reward_model.loss(train_reward.reshape((-1,1)), pred_reward)
                 # if args.wandb != 'no':
                 #     with torch.no_grad():
                 #         wandb.log({'reward_loss': reward_loss.detach().cpu().numpy()}, step=total_step)
@@ -402,13 +399,13 @@ class LatentSDEModel:
                 #                           fname=f'results/plts/train_plt_{total_step}')
                 if break_train:
                     self.plot_gym_results(holdout_rewards.reshape((-1,1)), holdout_reward_pred,
-                                          fname=f'results/plts/train_plt_rwd_{total_step}')
+                                          fname=f'results/{args.resdir}/train_plt_rwd_{total_step}')
 
                     self.plot_gym_results(holdout_labels, xs_pred,
-                                          fname=f'results/plts/train_plt_{total_step}')
-                    print(f'training model ended...{epoch} epochs')
+                                          fname=f'results/{args.resdir}/train_plt_{total_step}')
+                    print(f'training ended epoch no, {epoch}')
                     break
-            print(f'training epoch no, {epoch}')
+
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
@@ -521,15 +518,15 @@ class LatentSDEModel:
         reward_inp = torch.concatenate((inputs, actions), dim=1)
         model_rewards = self.reward_model(reward_inp).repeat([self.network_size, 1, 1])
         og_batches, og_dim = inputs.shape
-        inputs, flow_over_inp = self.batchify(inputs, batch_size)
-        actions, flow_over_actions = self.batchify(actions, batch_size)
+        # inputs, flow_over_inp = self.batchify(inputs, batch_size)
+        # actions, flow_over_actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size).repeat([self.network_size, 1, 1])
-        if len(flow_over_inp) > 0:
-            model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions,
-                                                               flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
-            model_rewards_extra = self.reward_model(model_op_extra)
-            model_op = torch.concatenate((model_op, model_op_extra), dim=1)
-            # model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
+        # if len(flow_over_inp) > 0:
+        #     model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions,
+        #                                                        flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
+        #     model_rewards_extra = self.reward_model(model_op_extra)
+        #     model_op = torch.concatenate((model_op, model_op_extra), dim=1)
+        #     # model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
         return torch.concatenate((model_rewards, model_op), dim=2)
