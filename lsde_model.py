@@ -180,12 +180,6 @@ class LatentSDE(nn.Module):
         self.kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
         self.mse_loss = torch.nn.MSELoss()
 
-    def contextualize(self, ctx):
-        self._ctx = ctx  # A tuple of tensors of sizes (T,), (T, batch_size, d).
-
-    def contextualize_time(self, i):
-        self.ti = i
-
     def f(self, t, y):
         return self.f_net(y)
 
@@ -200,7 +194,7 @@ class LatentSDE(nn.Module):
 
     def forward(self, xs, actions, xs_target, adjoint=True, method="reversible_heun"):
         assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
-        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0], device=device)
+        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0]+1, device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
         ctx = self.encoder(xs[0])
@@ -210,11 +204,8 @@ class LatentSDE(nn.Module):
 
         ts_horizon = ts.permute((1, 0))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
-        xs_mean = self.projector(zs[-1, :, :])
 
-        predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
         for i in sampled_t:
-            self.contextualize_time(i)
             if i == 0:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
             elif i < ts.shape[0] - 1:
@@ -232,15 +223,19 @@ class LatentSDE(nn.Module):
             z_pred, log_ratio = torchsde.sdeint_adjoint(
                 self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
+            if i == 0:
+                zs = z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])
+            else:
+                zs = torch.cat((zs, z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
+
+            xs_mean = self.projector(zs[-1, :, :])
 
             if i == 0:
-                predicted_xs = xs_mean
-                zs = z_pred
+                predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
             else:
                 # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_mean[-1].reshape(1, xs_mean.shape[1], xs_mean.shape[2])),
+                predicted_xs = torch.cat((predicted_xs, xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])),
                                          dim=0)
-                zs = torch.cat((zs, z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
             if i == 0:
                 cum_log_ratio = log_ratio
             else:
@@ -371,7 +366,7 @@ class LatentSDEModel:
         print(f'training model, train_size : {train_inputs.shape}')
         # todo itertools.count()
         train_count = 40
-        for epoch in range(train_count):
+        for epoch in itertools.count():
             train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
             # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
             for start_pos in range(0, train_inputs.shape[0], batch_size):
@@ -422,20 +417,20 @@ class LatentSDEModel:
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
-                if epoch % (train_count - 1):
-                    self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
-                                          fname=f'results/plts/train_plt_rwd_{total_step}')
-
-                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                                          fname=f'results/plts/train_plt_{total_step}')
-                # if break_train:
+                # if epoch % (train_count - 1):
                 #     self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
-                #                           fname=f'results/plts3/train_plt_rwd_{total_step}')
+                #                           fname=f'results/plts/train_plt_rwd_{total_step}')
                 #
                 #     self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                #                           fname=f'results/plts3/train_plt_{total_step}')
-                #     print(f'training model ended...')
-                #     break
+                #                           fname=f'results/plts/train_plt_{total_step}')
+                if break_train:
+                    self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
+                                          fname=f'results/plts3/train_plt_rwd_{total_step}')
+
+                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
+                                          fname=f'results/plts3/train_plt_{total_step}')
+                    print(f'training model ended...')
+                    break
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
