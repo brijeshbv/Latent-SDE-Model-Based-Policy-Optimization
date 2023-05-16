@@ -253,6 +253,7 @@ class EnsembleDynamicsModel():
                     self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
                                           predictions[:, :50, self.reward_size:],
                                           fname=f'results/plt_o/recon_step_{epoch_step}')
+                    print(f'training model ended, {epoch} epochs')
                     break
             # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
 
@@ -293,6 +294,7 @@ class EnsembleDynamicsModel():
             return False
 
     def predict(self, inputs, batch_size=1024, factored=True):
+        print(f'predicting {inputs.shape} state transitions')
         inputs = self.scaler.transform(inputs)
         ensemble_mean, ensemble_var = [], []
         for i in range(0, inputs.shape[0], batch_size):

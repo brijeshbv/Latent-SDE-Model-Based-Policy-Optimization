@@ -116,6 +116,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
             cur_step = total_step - start_step
 
             if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
+                print('breaking cycle')
                 break
 
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
@@ -178,7 +179,7 @@ def train_predict_model(args, env_pool, predict_env, epoch_step):
     delta_state = next_state - state
     inputs = np.concatenate((state, action), axis=-1)
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
-
+    print(f'training model, {inputs.shape}')
     predict_env.model.train(inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2)
 
 
