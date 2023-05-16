@@ -116,7 +116,7 @@ class LatentSDE(nn.Module):
 
     def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
                  skip_every=1,
-                 t1=0.5, dt=0.1):
+                 t1=10, dt=0.1):
         super(LatentSDE, self).__init__()
         # hyper-parameters
         kl_anneal_iters = 700
@@ -193,21 +193,22 @@ class LatentSDE(nn.Module):
         return torch.cat(out, dim=1)
 
     def forward(self, xs, actions, xs_target, adjoint=True, method="reversible_heun"):
-        assert xs.shape[0] != 0, f'xs does not contain data, {xs.shape}'
+        no_states, dim = xs.shape
+        no_actions, action_dim = actions.shape
+        no_target, target_dim = xs_target.shape
+        no_batches = 50
+        xs, actions, xs_target = xs.reshape((no_states // no_batches, no_batches, dim)), actions.reshape((no_actions // no_batches, no_batches, action_dim)), xs_target.reshape((no_target // no_batches, no_batches, target_dim))
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0]+1, device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
-        ctx = self.encoder(xs[0])
-        qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=1)
-        z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
-        zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
-
         ts_horizon = ts.permute((1, 0))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
-
         for i in sampled_t:
+            ctx = self.encoder(xs[i])
+            qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=1)
+            z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
             if i == 0:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
+                latent_and_data = torch.cat((z0[:, :], actions[i, :, :], xs[0, :, :]), dim=1)
             elif i < ts.shape[0] - 1:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i - 1, :, :], xs[i - 1, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
@@ -224,17 +225,16 @@ class LatentSDE(nn.Module):
                 self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
             if i == 0:
-                zs = z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])
+                zs = z_pred[-1:]
             else:
-                zs = torch.cat((zs, z_pred[-1].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
+                zs = torch.cat((zs, z_pred[-1:]), dim=0)
 
-            xs_mean = self.projector(zs[-1, :, :])
+            xs_mean = self.projector(zs[-1:, :])
 
             if i == 0:
-                predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
+                predicted_xs = xs_mean
             else:
-                # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])),
+                predicted_xs = torch.cat((predicted_xs, xs_mean),
                                          dim=0)
             if i == 0:
                 cum_log_ratio = log_ratio
@@ -246,7 +246,7 @@ class LatentSDE(nn.Module):
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
         logqp_path = cum_log_ratio.sum(dim=0).mean(dim=0)
-        return log_pxs, logqp0 + logqp_path, predicted_xs
+        return log_pxs, logqp0 + logqp_path, predicted_xs.reshape(predicted_xs.shape[0]*predicted_xs.shape[1], -1)
 
     def opt_loss(self, loss):
         self.optimizer.zero_grad()
@@ -307,14 +307,14 @@ class LatentSDEModel:
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = X.shape[0]
-        D = np.ceil(X.shape[2]).astype(int)
+        D = np.ceil(X.shape[1]).astype(int)
         nrows = np.ceil(D).astype(int)
         lag = X.shape[0] - Xrec.shape[0]
         plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[:tt, idx, i].detach().cpu().numpy(), 'r.-')
-            plt.plot(range(lag, tt), Xrec[:tt, idx, i].detach().cpu().numpy(), 'b.-')
+            plt.plot(range(0, tt), X[:tt, i].detach().cpu().numpy(), 'r.-')
+            plt.plot(range(lag, tt), Xrec[:tt, i].detach().cpu().numpy(), 'b.-')
         plt.savefig(f'{fname}-{idx}')
         if show is False:
             plt.close()
@@ -353,66 +353,43 @@ class LatentSDEModel:
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_rewards = torch.from_numpy(holdout_rewards).float().to(device)
         holdout_actions_inputs = torch.from_numpy(holdout_actions_inputs).float().to(device)
-        holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_rewards = holdout_rewards[None, :].repeat([self.network_size, 1])
-        holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_steps = holdout_inputs.shape[1] // steps_factor
-        holdout_inputs = self.chunkify_into_steps(holdout_inputs, holdout_steps)
-        holdout_actions_inputs = self.chunkify_into_steps(holdout_actions_inputs, holdout_steps)
-        holdout_rewards = self.chunkify_into_steps(holdout_rewards, holdout_steps)
-        holdout_labels = self.chunkify_into_steps(holdout_labels, holdout_steps)
-        batch_size = 50
+        batch_size = train_inputs.shape[0] // 2
         print(f'training model, train_size : {train_inputs.shape}')
-        # todo itertools.count()
-        train_count = 40
         for epoch in itertools.count():
-            train_idx = np.vstack([range(train_inputs.shape[0]) for _ in range(self.network_size)])
-            # train_idx = np.vstack([np.arange(train_inputs.shape[0])] for _ in range(self.network_size))
+            train_idx = torch.arange(train_inputs.shape[0])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
-                idx = train_idx[:, start_pos: start_pos + batch_size]
+                idx = train_idx[start_pos: start_pos + batch_size]
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
                 train_reward = torch.from_numpy(train_rewards[idx]).float().to(device)
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
-                # batch the data in steps of {steps} variable size
-                train_steps = train_input.shape[1] // steps_factor
+                log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input, train_action_input,
+                                                                        train_label)
 
-                train_input = self.chunkify_into_steps(train_input, train_steps)
-                train_action_input = self.chunkify_into_steps(train_action_input, train_steps)
-                train_reward = self.chunkify_into_steps(train_reward, train_steps)
-                train_label = self.chunkify_into_steps(train_label, train_steps)
-                for i in range(train_input.shape[0]):
-                    assert train_input[i].shape[1] > 1, f'steps for prediction is not > 1, {train_input[i].shape[1]}'
-                    log_pxs, logqp_path, predicted_xs = self.ensemble_model(train_input[i], train_action_input[i],
-                                                                            train_label[i])
-
-                    train_reward_inp = torch.concatenate((train_input[i], train_action_input[i]), dim=2)
-                    pred_reward = self.reward_model(train_reward_inp)
-                    reward_loss = self.reward_model.loss(train_reward[i], pred_reward)
-                    # if args.wandb != 'no':
-                    #     with torch.no_grad():
-                    #         wandb.log({'reward_loss': reward_loss.detach().cpu().numpy()}, step=total_step)
-                    #         wandb.log({'log_pxs': log_pxs}, step=total_step)
-                    self.reward_model.optimize(reward_loss)
-                    loss = self.ensemble_model.loss(log_pxs, logqp_path)
-                    self.ensemble_model.opt_loss(loss)
-                    losses.append(loss)
+                train_reward_inp = torch.concatenate((train_input, train_action_input), dim=1)
+                pred_reward = self.reward_model(train_reward_inp)
+                reward_loss = self.reward_model.loss(train_reward, pred_reward)
+                # if args.wandb != 'no':
+                #     with torch.no_grad():
+                #         wandb.log({'reward_loss': reward_loss.detach().cpu().numpy()}, step=total_step)
+                #         wandb.log({'log_pxs': log_pxs}, step=total_step)
+                self.reward_model.optimize(reward_loss)
+                loss = self.ensemble_model.loss(log_pxs, logqp_path)
+                self.ensemble_model.opt_loss(loss)
+                losses.append(loss)
 
             with torch.no_grad():
-                # batch the data in steps of {steps} variable size
-
                 holdout_mse_losses = np.asarray([])
-                for i in range(train_input.shape[0]):
-                    ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs[i],
-                                                                             holdout_actions_inputs[i],
-                                                                             holdout_labels[i])
-                    holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
-                    holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
-                    holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
-                    train_reward_inp = torch.concatenate((holdout_inputs[i], holdout_actions_inputs[i]), dim=2)
-                    holdout_reward_pred = self.reward_model(train_reward_inp)
+
+                ho_log_pxs, ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs,
+                                                                         holdout_actions_inputs,
+                                                                         holdout_labels)
+                holdout_mse_loss = self.ensemble_model.loss(ho_log_pxs, ho_logqp_path)
+                holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
+                holdout_mse_losses = np.append(holdout_mse_losses, holdout_mse_loss)
+                train_reward_inp = torch.concatenate((holdout_inputs, holdout_actions_inputs), dim=1)
+                holdout_reward_pred = self.reward_model(train_reward_inp)
 
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
@@ -424,13 +401,14 @@ class LatentSDEModel:
                 #     self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
                 #                           fname=f'results/plts/train_plt_{total_step}')
                 if break_train:
-                    self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
-                                          fname=f'results/plts3/train_plt_rwd_{total_step}')
+                    self.plot_gym_results(holdout_rewards.reshape((-1,1)), holdout_reward_pred,
+                                          fname=f'results/plts/train_plt_rwd_{total_step}')
 
-                    self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                                          fname=f'results/plts3/train_plt_{total_step}')
-                    print(f'training model ended...')
+                    self.plot_gym_results(holdout_labels, xs_pred,
+                                          fname=f'results/plts/train_plt_{total_step}')
+                    print(f'training model ended...{epoch} epochs')
                     break
+            print(f'training epoch no, {epoch}')
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
@@ -451,76 +429,66 @@ class LatentSDEModel:
         return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
                                                                                        dtype=torch.float32).to(device)
 
-    def chunkify_into_steps(self, data, steps):
-        op = np.array([], dtype=np.float32)
-        if len(data.shape) == 3:
-            no_ensemble, no_states, state_dim = data.shape
-            for i in range(no_ensemble):
-                ensemble = data[i]
-                ensemble_size = ensemble.shape[0]
-                big_chunk = np.array([], dtype=np.float32)
-                for j in range(ensemble_size):
-                    if j % steps == 0:
-                        chunk = ensemble[j:j + steps]
-                        if j == 0:
-                            big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-                        else:
-                            assert big_chunk.shape[1] == chunk.shape[
-                                0], f'shapes do not match for concatenation, {data.shape}, {steps}'
-                            big_chunk = torch.concatenate((big_chunk,
-                                                           torch.asarray(chunk).reshape(
-                                                               (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-                if i == 0:
-                    op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
-                else:
-                    op = torch.concatenate((op,
-                                            big_chunk.reshape(
-                                                (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
-                                           dim=0)
-            op = torch.as_tensor(op)
-            op = torch.permute(op, (0, 2, 1, 3))
-        elif len(data.shape) == 2:
-            data = torch.reshape(data, (data.shape[0], data.shape[1], 1))
-            no_ensemble, no_states, state_dim = data.shape
-            for i in range(no_ensemble):
-                ensemble = data[i]
-                ensemble_size = ensemble.shape[0]
-                big_chunk = np.array([], dtype=np.float32)
-                for j in range(ensemble_size):
-                    if j % steps == 0:
-                        chunk = ensemble[j:j + steps]
-                        if j == 0:
-                            big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-                        else:
-                            big_chunk = torch.concatenate((big_chunk,
-                                                           torch.asarray(chunk).reshape(
-                                                               (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-                if i == 0:
-                    op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
-                else:
-                    op = torch.concatenate((op,
-                                            big_chunk.reshape(
-                                                (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
-                                           dim=0)
-            op = torch.as_tensor(op)
-            op = torch.permute(op, (0, 2, 1, 3))
-        else:
-            big_chunk = np.array([], dtype=np.float32)
-            no_data = data.shape[0]
-            for j in range(no_data):
-                if j % steps == 0:
-                    chunk = data[j:j + steps]
-                    if j == 0:
-                        big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-                    else:
-                        big_chunk = torch.concatenate((big_chunk,
-                                                       torch.asarray(chunk).reshape(
-                                                           (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-            op = torch.as_tensor(big_chunk)
-            op = torch.permute(op, (1, 0, 2))
-
-            # ensemble, steps, batch, dim
-        return op
+    # def chunkify_into_steps(self, data, steps):
+    #     op = np.array([], dtype=np.float32)
+    #     if len(data.shape) == 2:
+    #         no_states, state_dim = data.shape
+    #         big_chunk = np.array([], dtype=np.float32)
+    #         for j in range(no_states):
+    #             if j % steps == 0:
+    #                 chunk = data[j:j + steps]
+    #                 if j == 0:
+    #                     big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+    #                 else:
+    #                     assert big_chunk.shape[1] == chunk.shape[
+    #                         0], f'shapes do not match for concatenation, {data.shape}, {steps}'
+    #                     big_chunk = torch.concatenate((big_chunk,
+    #                                                    torch.asarray(chunk).reshape(
+    #                                                        (1, chunk.shape[0], chunk.shape[1]))), dim=0)
+    #         op = torch.as_tensor(op)
+    #         op = torch.permute(op, (0, 2, 1, 3))
+    #     elif len(data.shape) == 2:
+    #         data = torch.reshape(data, (data.shape[0], data.shape[1], 1))
+    #         no_ensemble, no_states, state_dim = data.shape
+    #         for i in range(no_ensemble):
+    #             ensemble = data[i]
+    #             ensemble_size = ensemble.shape[0]
+    #             big_chunk = np.array([], dtype=np.float32)
+    #             for j in range(ensemble_size):
+    #                 if j % steps == 0:
+    #                     chunk = ensemble[j:j + steps]
+    #                     if j == 0:
+    #                         big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+    #                     else:
+    #                         big_chunk = torch.concatenate((big_chunk,
+    #                                                        torch.asarray(chunk).reshape(
+    #                                                            (1, chunk.shape[0], chunk.shape[1]))), dim=0)
+    #             if i == 0:
+    #                 op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
+    #             else:
+    #                 op = torch.concatenate((op,
+    #                                         big_chunk.reshape(
+    #                                             (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
+    #                                        dim=0)
+    #         op = torch.as_tensor(op)
+    #         op = torch.permute(op, (0, 2, 1, 3))
+    #     else:
+    #         big_chunk = np.array([], dtype=np.float32)
+    #         no_data = data.shape[0]
+    #         for j in range(no_data):
+    #             if j % steps == 0:
+    #                 chunk = data[j:j + steps]
+    #                 if j == 0:
+    #                     big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
+    #                 else:
+    #                     big_chunk = torch.concatenate((big_chunk,
+    #                                                    torch.asarray(chunk).reshape(
+    #                                                        (1, chunk.shape[0], chunk.shape[1]))), dim=0)
+    #         op = torch.as_tensor(big_chunk)
+    #         op = torch.permute(op, (1, 0, 2))
+    #
+    #         # ensemble, steps, batch, dim
+    #     return op
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
