@@ -303,10 +303,10 @@ class LatentSDEModel:
         self.scaler = StandardScaler()
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
-        tt = X.shape[0] // 5
+        tt = 50
         D = np.ceil(X.shape[1]).astype(int)
         nrows = np.ceil(D).astype(int)
-        lag = X.shape[0] - Xrec.shape[0]
+        lag = 0
         plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
