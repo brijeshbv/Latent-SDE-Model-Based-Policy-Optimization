@@ -125,7 +125,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 break
 
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env, epoch_step)
+                train_predict_model(args, env_pool, predict_env, total_step)
 
                 new_rollout_length = set_rollout_length(args, epoch_step)
                 if rollout_length != new_rollout_length:
