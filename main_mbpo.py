@@ -4,6 +4,7 @@ import gym
 import torch
 import numpy as np
 from itertools import count
+import wandb
 
 import logging
 
@@ -97,6 +98,10 @@ def readParser():
 
     parser.add_argument('--model_type', default='tensorflow', metavar='A',
                         help='predict model -- pytorch or tensorflow')
+    parser.add_argument('--wandb', default='yes', metavar='A',
+                        help='wandb log yes or no')
+    parser.add_argument('--resdir', default="plts",metavar='A',
+                        help='results directory')
 
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
@@ -136,7 +141,8 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
 
             total_step += 1
-
+            if total_step % 200 == 0:
+                print(f'Steps taken: {total_step}\n')
             if total_step % args.epoch_length == 0:
                 '''
                 avg_reward_len = min(len(env_sampler.path_rewards), 5)
@@ -156,6 +162,8 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 # logger.record_tabular("total_step", total_step)
                 # logger.record_tabular("sum_reward", sum_reward)
                 # logger.dump_tabular()
+                if args.wandb != 'no':
+                    wandb.log({'reward': sum_reward},step = total_step)
                 logging.info("Step Reward: " + str(total_step) + " " + str(sum_reward))
                 # print(total_step, sum_reward)
 
@@ -180,7 +188,7 @@ def train_predict_model(args, env_pool, predict_env, epoch_step):
     inputs = np.concatenate((state, action), axis=-1)
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
     print(f'training model, {inputs.shape}')
-    predict_env.model.train(inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2)
+    predict_env.model.train(args ,inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -268,7 +276,9 @@ class SingleEnvWrapper(gym.Wrapper):
 def main(args=None):
     if args is None:
         args = readParser()
-
+    if args.wandb != 'no':
+        wandb.login()
+        wandb.init(project='lsde-mbrl')
     # Initial environment
     env = gym.make(args.env_name)
 
