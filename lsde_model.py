@@ -67,14 +67,14 @@ class LinearScheduler(object):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size, ensemble_size):
         super(Encoder, self).__init__()
         self.lin = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
+            EnsembleFC(input_size, hidden_size, ensemble_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
+            EnsembleFC(hidden_size, hidden_size, ensemble_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, output_size),
+            EnsembleFC(hidden_size, output_size, ensemble_size),
         )
 
     def forward(self, inp):
@@ -109,12 +109,44 @@ class RewardNet(nn.Module):
         loss.backward()
         self.optim.step()
 
+class EnsembleFC(nn.Module):
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    ensemble_size: int
+    weight: torch.Tensor
+
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float =0.000025, bias: bool = True) -> None:
+        super(EnsembleFC, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.ensemble_size = ensemble_size
+        self.weight = nn.Parameter(torch.Tensor(ensemble_size, in_features, out_features))
+        self.weight_decay = weight_decay
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(ensemble_size, out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        pass
+
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        w_times_x = torch.bmm(input, self.weight)
+        return torch.add(w_times_x, self.bias[:, None, :])  # w times x + b
+
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}'.format(
+            self.in_features, self.out_features, self.bias is not None
+        )
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, t0=0,
+    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, network_size ,t0=0,
                  skip_every=1,
                  t1=10, dt=0.1):
         super(LatentSDE, self).__init__()
@@ -124,14 +156,15 @@ class LatentSDE(nn.Module):
         lr_gamma = 0.9997
 
         # Encoder.
-        self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size)
-        self.qz0_net = nn.Linear(context_size, latent_size + latent_size)
+        self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size, ensemble_size=network_size)
+        self.qz0_net = EnsembleFC(context_size, latent_size + latent_size, network_size)
         self.t0 = t0
         self.t1 = t1
         self.dt = dt
         self.skip_every = skip_every
         self.reward_size = reward_size
         self.latent_size = latent_size
+        self.use_decay = True
 
         # Decoder.
         self.f_net = nn.Sequential(
@@ -162,17 +195,17 @@ class LatentSDE(nn.Module):
         )
 
         self.projector = nn.Sequential(
-            nn.Linear(latent_size, hidden_size),
+            EnsembleFC(latent_size, hidden_size, network_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
+            EnsembleFC(hidden_size, hidden_size, network_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, data_size),
+            EnsembleFC(hidden_size, data_size, network_size),
         )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
-            nn.Linear(latent_and_action_size, latent_size))
-        self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
-        self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
+            EnsembleFC(latent_and_action_size, latent_size, network_size))
+        self.pz0_mean = nn.Parameter(torch.zeros(network_size, 1, latent_size))
+        self.pz0_logstd = nn.Parameter(torch.zeros(network_size, 1, latent_size))
 
         self._ctx = None
         self.optimizer = optim.Adam(params=self.parameters(), lr=lr_init)
@@ -192,26 +225,37 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, actions, xs_target, adjoint=True, method="reversible_heun"):
-        no_states, dim = xs.shape
-        no_actions, action_dim = actions.shape
-        no_target, target_dim = xs_target.shape
+    def get_decay_loss(self):
+        decay_loss = 0.
+        for m in self.children():
+            if isinstance(m, EnsembleFC):
+                decay_loss += m.weight_decay * torch.sum(torch.square(m.weight)) / 2.
+                # print(m.weight.shape)
+                # print(m, decay_loss, m.weight_decay)
+        return decay_loss
+
+    def forward(self, xs, actions, xs_target, method="reversible_heun"):
+        no_networks, no_states, dim = xs.shape
+        no_networks, no_actions, action_dim = actions.shape
+        no_networks, no_target, target_dim = xs_target.shape
         no_batches = 50
-        xs, actions, xs_target = xs.reshape((no_states // no_batches, no_batches, dim)), actions.reshape((no_actions // no_batches, no_batches, action_dim)), xs_target.reshape((no_target // no_batches, no_batches, target_dim))
-        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[0]+1, device=device)
+        xs, actions, xs_target = xs.reshape((no_networks, no_states // no_batches, no_batches, dim)), actions.reshape((no_networks, no_actions // no_batches, no_batches, action_dim)), xs_target.reshape((no_networks, no_target // no_batches, no_batches, target_dim))
+        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[1]+1, device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
         noise_std = 0.01
         ts_horizon = ts.permute((1, 0))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         for i in sampled_t:
-            ctx = self.encoder(xs[i])
-            qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=1)
+            ctx = self.encoder(xs[:,i,:,:])
+            qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=2)
             z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
             if i == 0:
-                latent_and_data = torch.cat((z0[:, :], actions[i, :, :], xs[0, :, :]), dim=1)
+                latent_and_data = torch.cat((z0[:, :, :], actions[:, 0, :, :], xs[:, 0, :, :]), dim=2)
             elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i - 1, :, :], xs[i - 1, :, :]), dim=1)
+                latent_and_data = torch.cat((zs[:, -1, :, :], actions[:, i, :, :], xs[:, i, :, :]), dim=2)
             z_encoded = self.action_encode_net(latent_and_data)
+
+            z_encoded = z_encoded.reshape((no_networks * no_batches,-1))
             if self.skip_every == 1:
                 t_horizon = ts_horizon[0][i: i + self.skip_every + 1]
             else:
@@ -225,17 +269,17 @@ class LatentSDE(nn.Module):
                 self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
             if i == 0:
-                zs = z_pred[-1:]
+                zs = z_pred[-1:].reshape((no_networks,1, no_batches,-1))
             else:
-                zs = torch.cat((zs, z_pred[-1:]), dim=0)
+                zs = torch.cat((zs, z_pred[-1:].reshape((no_networks, 1, no_batches,-1))), dim=1)
 
-            xs_mean = self.projector(zs[-1:, :])
+            xs_mean = self.projector(zs[:, -1, :, :])
 
             if i == 0:
                 predicted_xs = xs_mean
             else:
                 predicted_xs = torch.cat((predicted_xs, xs_mean),
-                                         dim=0)
+                                         dim=1)
             if i == 0:
                 cum_log_ratio = log_ratio
             else:
@@ -258,6 +302,8 @@ class LatentSDE(nn.Module):
 
     def loss(self, log_pxs, log_ratio):
         loss = -log_pxs + log_ratio * self.kl_scheduler.val
+        if self.use_decay:
+            loss += self.get_decay_loss()
         return loss
 
     @torch.no_grad()
@@ -298,7 +344,7 @@ class LatentSDEModel:
         self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size)
+        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size, self.network_size)
         self.reward_model = RewardNet(data_size=state_size, action_size=action_size)
         self.scaler = StandardScaler()
 
@@ -353,7 +399,7 @@ class LatentSDEModel:
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
         for epoch in itertools.count():
-            train_idx = torch.arange(train_inputs.shape[0])
+            train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
