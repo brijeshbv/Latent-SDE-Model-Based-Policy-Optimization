@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 
 
@@ -9,13 +10,13 @@ class PredictEnv:
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
-        if env_name == "Hopper-v2":
+        if env_name == "Hopper-v4":
             assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
 
-            height = next_obs[:, 0]
-            angle = next_obs[:, 1]
+            height = next_obs[:, 1]
+            angle = next_obs[:, 2]
             not_done = np.isfinite(next_obs).all(axis=-1) \
-                       * np.abs(next_obs[:, 1:] < 100).all(axis=-1) \
+                       * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
                        * (height > .7) \
                        * (np.abs(angle) < .2)
 
@@ -77,6 +78,15 @@ class PredictEnv:
 
         return log_prob, stds
 
+    def get_reward(self, env, action, curr_pos, next_pos):
+        reward = numpy.zeros_like(curr_pos[:,0])
+        if env == "Hopper-v4":
+            reward = (next_pos[:, 0] - curr_pos[:, 0]) / 0.008
+            reward += numpy.ones_like(curr_pos[:, 0])
+            cost = 1e-3 * np.square(action).sum(axis=1)
+            reward = reward - cost
+        return reward
+
     def step(self,args, obs, act, total_step, deterministic=False):
         if len(obs.shape) == 1:
             obs = obs[None]
@@ -88,7 +98,7 @@ class PredictEnv:
         ensemble_model_means = self.model.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
-        ensemble_model_means[:, :, 1:] += obs
+        ensemble_model_means[:, :, :] += obs
 
         ensemble_samples = ensemble_model_means
         num_models, batch_size, _ = ensemble_model_means.shape
@@ -103,10 +113,9 @@ class PredictEnv:
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
 
-        rewards, next_obs = samples[:, :1], samples[:, 1:]
+        next_obs = samples[:, :]
+        rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
-
-        batch_size = model_means.shape[0]
         return_means = np.concatenate((model_means[:, :1], terminals, model_means[:, 1:]), axis=-1)
 
         if return_single:

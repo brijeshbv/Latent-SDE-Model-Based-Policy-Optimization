@@ -49,7 +49,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=5, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=3, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -61,7 +61,7 @@ def readParser():
     parser.add_argument('--replay_size', type=int, default=20000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
-    parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
+    parser.add_argument('--model_retain_epochs', type=int, default=2, metavar='A',
                         help='retain epochs')
     # todo was 250
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=500, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=2000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -133,7 +133,9 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     delta_state_label = next_state - state
     inputs = state
 
-    predict_env.model.train(args, inputs, delta_state_label, action, reward, total_step, holdout_ratio=0.2)
+    predict_env.model.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+
+
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -292,7 +294,7 @@ def main(args=None):
         wandb.init(project='lsde-mbrl')
 
     # Initial environment
-    env = gym.make(args.env_name)
+    env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
 
     # Set random seed
     torch.manual_seed(args.seed)
