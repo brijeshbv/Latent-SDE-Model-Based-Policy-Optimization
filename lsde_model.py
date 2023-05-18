@@ -575,7 +575,8 @@ class LatentSDEModel:
         else:
             return False
 
-    def predict(self, inputs, actions, batch_size=128):
+    @torch.no_grad()
+    def predict(self,args, inputs, actions, batch_size=128, total_step =0):
         assert len(inputs) > 0, f'predict input is empty'
         self.scaler.fit(inputs)
         inputs = torch.asarray(self.scaler.transform(inputs), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
@@ -596,4 +597,17 @@ class LatentSDEModel:
         #     # model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
-        return torch.concatenate((model_rewards, model_op), dim=2)
+        op = torch.concatenate((model_rewards, model_op), dim=2)
+        self.plt_predictions(op, fname=f'results/{args.resdir}/prediction_{total_step}')
+        return op
+
+    def plt_predictions(self, X, fname='reconstructions.png'):
+        tt = 50
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D).astype(int)
+        plt.figure(2, figsize=(40, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[0, :tt, i].detach().cpu().numpy(), 'g.-')
+        plt.savefig(f'{fname}')
+        plt.close()
