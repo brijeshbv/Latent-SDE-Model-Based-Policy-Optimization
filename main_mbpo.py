@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=500, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -148,12 +148,12 @@ def resize_model_pool(args, rollout_length, model_pool):
     return new_model_pool
 
 
-def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length):
+def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step):
     state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, info = predict_env.step(state, action)
+        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step)
         # TODO: Push a batch of samples
         model_pool.push_batch(
             [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
@@ -246,7 +246,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
 
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)

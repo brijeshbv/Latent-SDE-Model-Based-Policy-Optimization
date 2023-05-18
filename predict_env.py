@@ -77,7 +77,7 @@ class PredictEnv:
 
         return log_prob, stds
 
-    def step(self, obs, act, deterministic=False):
+    def step(self,args, obs, act, total_step, deterministic=False):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -85,7 +85,7 @@ class PredictEnv:
         else:
             return_single = False
         batch_size = 512
-        ensemble_model_means = self.model.predict(obs, act, batch_size=batch_size).detach().cpu().numpy()
+        ensemble_model_means = self.model.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
         ensemble_model_means[:, :, 1:] += obs
