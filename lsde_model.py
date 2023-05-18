@@ -85,33 +85,6 @@ class Encoder(nn.Module):
         return out
 
 
-class RewardNet(nn.Module):
-    def __init__(self, data_size, action_size, network_size):
-        super(RewardNet, self).__init__()
-        self.reward_net = self.f_net = nn.Sequential(
-            EnsembleFC(data_size + action_size, 100, network_size),
-            EnsembleFC(100, 50, network_size),
-            nn.ReLU(),
-            EnsembleFC(50, 25, network_size),
-            nn.Tanh(),
-            EnsembleFC(25, 1, network_size),
-        )
-        self.mse_loss = torch.nn.MSELoss()
-        self.optim = optim.Adam(params=self.parameters(), lr=1e-3)
-
-    def forward(self, data):
-        out = self.reward_net(data)
-        return out
-
-    def loss(self, target, prediction):
-        return self.mse_loss(target.mean(dim=0), prediction.mean(dim=0))
-
-    @torch.no_grad()
-    def optimize(self, loss):
-        self.optim.zero_grad()
-        loss.backward()
-        self.optim.step()
-
 class EnsembleFC(nn.Module):
     __constants__ = ['in_features', 'out_features']
     in_features: int
@@ -371,7 +344,6 @@ class LatentSDEModel:
         self.network_size = network_size
         self.elite_model_idxes = []
         self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size, self.network_size)
-        self.reward_model = RewardNet(data_size=state_size, action_size=action_size, network_size = network_size)
         self.scaler = StandardScaler()
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
@@ -388,7 +360,7 @@ class LatentSDEModel:
         if show is False:
             plt.close()
 
-    def train(self, args, inputs, labels, actions, rewards, total_step, batch_size=256, holdout_ratio=0.,
+    def train(self, args, inputs, labels, actions, total_step, batch_size=256, holdout_ratio=0.,
               max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
@@ -399,13 +371,11 @@ class LatentSDEModel:
         # no permuting required for SDE models
         # permutation = np.random.permutation(inputs.shape[0])
         # inputs, labels = inputs[permutation], labels[permutation]
-        inputs, labels, rewards = inputs[: ((inputs.shape[0] // steps_factor) * steps_factor)], labels[: (
-                (labels.shape[0] // steps_factor) * steps_factor)], rewards[: (
-                (rewards.shape[0] // steps_factor) * steps_factor)]
-        train_inputs, train_labels, train_rewards = inputs[num_holdout:], labels[num_holdout:], rewards[num_holdout:]
+        inputs, labels = inputs[: ((inputs.shape[0] // steps_factor) * steps_factor)], labels[: (
+                (labels.shape[0] // steps_factor) * steps_factor)]
+        train_inputs, train_labels = inputs[num_holdout:], labels[num_holdout:]
         train_actions_inputs = actions[num_holdout:]
-        holdout_inputs, holdout_labels, holdout_rewards = inputs[:num_holdout], labels[:num_holdout], rewards[
-                                                                                                      :num_holdout]
+        holdout_inputs, holdout_labels = inputs[:num_holdout], labels[:num_holdout]
         holdout_actions_inputs = actions[:num_holdout]
 
         self.scaler.fit(train_inputs)
@@ -420,11 +390,11 @@ class LatentSDEModel:
 
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
-        holdout_rewards = torch.from_numpy(holdout_rewards).float().to(device)
+
         holdout_actions_inputs = torch.from_numpy(holdout_actions_inputs).float().to(device)
         holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
-        holdout_rewards = holdout_rewards[None, :].repeat([self.network_size, 1, 1])
+
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
@@ -433,16 +403,12 @@ class LatentSDEModel:
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
-                train_reward = torch.from_numpy(train_rewards[idx]).float().to(device)
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
                 logqp_path, predicted_xs = self.ensemble_model(train_input, train_action_input)
 
                 train_reward_inp = torch.concatenate((train_input, train_action_input), dim=2)
-                pred_reward = self.reward_model(train_reward_inp)
-                reward_loss = self.reward_model.loss(train_reward.reshape((self.network_size, -1,1)), pred_reward)
-                self.reward_model.optimize(reward_loss)
                 loss, _ = self.ensemble_model.loss( logqp_path, predicted_xs, train_label)
                 self.ensemble_model.opt_loss(loss)
                 losses.append(loss)
@@ -452,22 +418,11 @@ class LatentSDEModel:
                 ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
                 holdout_mse_loss, holdout_ensemble_loss = self.ensemble_model.loss(ho_logqp_path, xs_pred, holdout_labels)
                 holdout_ensemble_loss = holdout_ensemble_loss.detach().cpu().numpy()
-                train_reward_inp = torch.concatenate((holdout_inputs, holdout_actions_inputs), dim=2)
-                holdout_reward_pred = self.reward_model(train_reward_inp)
 
                 sorted_loss_idx = np.argsort(holdout_ensemble_loss)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_ensemble_loss)
-                # if epoch % (train_count - 1):
-                #     self.plot_gym_results(holdout_rewards[train_input.shape[0] - 1], holdout_reward_pred,
-                #                           fname=f'results/plts/train_plt_rwd_{total_step}')
-                #
-                #     self.plot_gym_results(holdout_labels[holdout_labels.shape[0] - 1], xs_pred,
-                #                           fname=f'results/plts/train_plt_{total_step}')
                 if break_train:
-                    self.plot_gym_results(holdout_rewards[0].reshape((-1,1)), holdout_reward_pred[0],
-                                          fname=f'results/{args.resdir}/train_plt_rwd_{total_step}')
-
                     self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                           fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}')
@@ -493,66 +448,6 @@ class LatentSDEModel:
         return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
                                                                                        dtype=torch.float32).to(device)
 
-    # def chunkify_into_steps(self, data, steps):
-    #     op = np.array([], dtype=np.float32)
-    #     if len(data.shape) == 2:
-    #         no_states, state_dim = data.shape
-    #         big_chunk = np.array([], dtype=np.float32)
-    #         for j in range(no_states):
-    #             if j % steps == 0:
-    #                 chunk = data[j:j + steps]
-    #                 if j == 0:
-    #                     big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-    #                 else:
-    #                     assert big_chunk.shape[1] == chunk.shape[
-    #                         0], f'shapes do not match for concatenation, {data.shape}, {steps}'
-    #                     big_chunk = torch.concatenate((big_chunk,
-    #                                                    torch.asarray(chunk).reshape(
-    #                                                        (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-    #         op = torch.as_tensor(op)
-    #         op = torch.permute(op, (0, 2, 1, 3))
-    #     elif len(data.shape) == 2:
-    #         data = torch.reshape(data, (data.shape[0], data.shape[1], 1))
-    #         no_ensemble, no_states, state_dim = data.shape
-    #         for i in range(no_ensemble):
-    #             ensemble = data[i]
-    #             ensemble_size = ensemble.shape[0]
-    #             big_chunk = np.array([], dtype=np.float32)
-    #             for j in range(ensemble_size):
-    #                 if j % steps == 0:
-    #                     chunk = ensemble[j:j + steps]
-    #                     if j == 0:
-    #                         big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-    #                     else:
-    #                         big_chunk = torch.concatenate((big_chunk,
-    #                                                        torch.asarray(chunk).reshape(
-    #                                                            (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-    #             if i == 0:
-    #                 op = big_chunk.reshape((1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))
-    #             else:
-    #                 op = torch.concatenate((op,
-    #                                         big_chunk.reshape(
-    #                                             (1, big_chunk.shape[0], big_chunk.shape[1], big_chunk.shape[2]))),
-    #                                        dim=0)
-    #         op = torch.as_tensor(op)
-    #         op = torch.permute(op, (0, 2, 1, 3))
-    #     else:
-    #         big_chunk = np.array([], dtype=np.float32)
-    #         no_data = data.shape[0]
-    #         for j in range(no_data):
-    #             if j % steps == 0:
-    #                 chunk = data[j:j + steps]
-    #                 if j == 0:
-    #                     big_chunk = torch.asarray(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-    #                 else:
-    #                     big_chunk = torch.concatenate((big_chunk,
-    #                                                    torch.asarray(chunk).reshape(
-    #                                                        (1, chunk.shape[0], chunk.shape[1]))), dim=0)
-    #         op = torch.as_tensor(big_chunk)
-    #         op = torch.permute(op, (1, 0, 2))
-    #
-    #         # ensemble, steps, batch, dim
-    #     return op
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
@@ -582,24 +477,12 @@ class LatentSDEModel:
         inputs = torch.asarray(self.scaler.transform(inputs), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
         self.scaler.fit(actions)
         actions = torch.asarray(self.scaler.transform(actions), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
-
-        reward_inp = torch.concatenate((inputs, actions), dim=2)
-        model_rewards = self.reward_model(reward_inp)
         num_nets, og_batches, og_dim = inputs.shape
-        # inputs, flow_over_inp = self.batchify(inputs, batch_size)
-        # actions, flow_over_actions = self.batchify(actions, batch_size)
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size)
-        # if len(flow_over_inp) > 0:
-        #     model_op_extra = self.ensemble_model.sample_fromx0(flow_over_inp, flow_over_actions,
-        #                                                        flow_over_inp.shape[1]).repeat([self.network_size, 1, 1])
-        #     model_rewards_extra = self.reward_model(model_op_extra)
-        #     model_op = torch.concatenate((model_op, model_op_extra), dim=1)
-        #     # model_rewards = torch.concatenate((model_rewards, model_rewards_extra), dim=1)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
-        op = torch.concatenate((model_rewards, model_op), dim=2)
-        self.plt_predictions(op, fname=f'results/{args.resdir}/prediction_{total_step}')
-        return op
+        self.plt_predictions(model_op, fname=f'results/{args.resdir}/prediction_{total_step}')
+        return model_op
 
     def plt_predictions(self, X, fname='reconstructions.png'):
         tt = 50
