@@ -113,8 +113,8 @@ class PredictEnv:
             ensemble_samples = ensemble_model_means
         else:
             ensemble_samples = ensemble_model_means + np.random.normal(size=ensemble_model_means.shape) * ensemble_model_stds
-
-        self.plt_predictions(ensemble_samples[:,:, 1:], fname=f'results/plt_o/prediction_{total_step}')
+        if total_step % 500 == 0:
+            self.plt_predictions(ensemble_samples[:,:, 1:], fname=f'results/plt_o/prediction_{total_step}')
 
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch':
@@ -127,7 +127,7 @@ class PredictEnv:
         model_means = ensemble_model_means[model_idxes, batch_idxes]
         model_stds = ensemble_model_stds[model_idxes, batch_idxes]
 
-        log_prob, dev = self._get_logprob(samples, ensemble_model_means, ensemble_model_vars)
+        #log_prob, dev = self._get_logprob(samples, ensemble_model_means, ensemble_model_vars)
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
@@ -142,8 +142,8 @@ class PredictEnv:
             return_stds = return_stds[0]
             rewards = rewards[0]
             terminals = terminals[0]
-
-        info = {'mean': return_means, 'std': return_stds, 'log_prob': log_prob, 'dev': dev}
+        #'std': return_stds, 'log_prob': log_prob, 'dev': dev
+        info = {'mean': return_means }
         return next_obs, rewards, terminals, info
 
     def plt_predictions(self, X, fname='reconstructions.png'):
