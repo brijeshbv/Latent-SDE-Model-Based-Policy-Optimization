@@ -398,7 +398,7 @@ class LatentSDEModel:
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
-        for epoch in range(1):
+        for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
@@ -407,9 +407,7 @@ class LatentSDEModel:
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
                 logqp_path, predicted_xs = self.ensemble_model(train_input, train_action_input)
-
-                train_reward_inp = torch.concatenate((train_input, train_action_input), dim=2)
-                loss, _ = self.ensemble_model.loss( logqp_path, predicted_xs, train_label)
+                loss, _ = self.ensemble_model.loss(logqp_path, predicted_xs, train_label)
                 self.ensemble_model.opt_loss(loss)
                 losses.append(loss)
 
@@ -423,7 +421,8 @@ class LatentSDEModel:
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_ensemble_loss)
                 if break_train:
-                    self.plot_gym_results(holdout_labels[0], xs_pred[0],
+                    if total_step % 2000 == 0:
+                        self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                           fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}')
                     break

@@ -49,7 +49,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=1, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -61,7 +61,7 @@ def readParser():
     parser.add_argument('--replay_size', type=int, default=30000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
-    parser.add_argument('--model_retain_epochs', type=int, default=2, metavar='A',
+    parser.add_argument('--model_retain_epochs', type=int, default=4, metavar='A',
                         help='retain epochs')
     # todo was 250
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
@@ -109,6 +109,9 @@ def readParser():
                         help='results directory')
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
+    parser.add_argument('--exclude_current_positions_from_observation', default=False, metavar="A",
+                        help='exclude_current_positions_from_observation')
+
 
     return parser.parse_args()
 
@@ -294,7 +297,10 @@ def main(args=None):
         wandb.init(project='lsde-mbrl')
 
     # Initial environment
-    env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
+    if args.env_name == 'InvertedPendulum-v4':
+        env = gym.make(args.env_name)
+    else:
+        env = gym.make(args.env_name,exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
 
     # Set random seed
     torch.manual_seed(args.seed)
