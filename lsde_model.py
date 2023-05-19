@@ -421,7 +421,7 @@ class LatentSDEModel:
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_ensemble_loss)
                 if break_train:
-                    if total_step % 2000 == 0:
+                    if total_step % 500 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                           fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}')
