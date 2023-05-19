@@ -1,6 +1,6 @@
 import numpy
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class PredictEnv:
     def __init__(self, model, env_name, model_type):
@@ -101,6 +101,9 @@ class PredictEnv:
         ensemble_model_means[:, :, :] += obs
 
         ensemble_samples = ensemble_model_means
+
+        self.plt_predictions(ensemble_samples, fname=f'results/{args.resdir}/prediction_{total_step}')
+
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
@@ -126,3 +129,14 @@ class PredictEnv:
         # 'log_prob': log_prob, 'dev': dev
         info = {'mean': return_means, }
         return next_obs, rewards, terminals, info
+
+    def plt_predictions(self, X, fname='reconstructions.png'):
+        tt = 50
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D).astype(int)
+        plt.figure(2, figsize=(40, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[0, :tt, i], 'g.-')
+        plt.savefig(f'{fname}')
+        plt.close()
