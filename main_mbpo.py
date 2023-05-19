@@ -49,7 +49,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=3, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -58,7 +58,7 @@ def readParser():
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
     # todo restore replay size 1000000
-    parser.add_argument('--replay_size', type=int, default=20000, metavar='N',
+    parser.add_argument('--replay_size', type=int, default=30000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=2, metavar='A',
@@ -67,7 +67,7 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=20000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=30000, metavar='A',
                         help='rollout number M')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=2000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
