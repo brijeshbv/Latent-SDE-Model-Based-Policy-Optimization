@@ -398,7 +398,7 @@ class LatentSDEModel:
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
-        for epoch in itertools.count():
+        for epoch in range(1):
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
