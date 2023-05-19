@@ -247,12 +247,13 @@ class EnsembleDynamicsModel():
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
-                    self.plot_gym_results(holdout_labels[:, :50, : self.reward_size],
-                                          predictions[:, :50, :self.reward_size],
-                                          fname=f'results/{args.resdir}/recon_step__rwd{epoch_step}')
-                    self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
-                                          predictions[:, :50, self.reward_size:],
-                                          fname=f'results/{args.resdir}/recon_step_{epoch_step}')
+                    if epoch_step % 2000 == 0:
+                        self.plot_gym_results(holdout_labels[:, :50, : self.reward_size],
+                                              predictions[:, :50, :self.reward_size],
+                                              fname=f'results/{args.resdir}/recon_step__rwd{epoch_step}')
+                        self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
+                                              predictions[:, :50, self.reward_size:],
+                                              fname=f'results/{args.resdir}/recon_step_{epoch_step}')
                     print(f'training model ended, {epoch} epochs')
                     break
             # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))

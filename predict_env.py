@@ -65,7 +65,16 @@ class PredictEnv:
                        * (torso_ang < 1.0)
             done = ~not_done
             done = done[:, None]
-            return done
+        elif 'InvertedPendulum-v4' in env_name:
+            assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+
+            notdone = np.isfinite(next_obs).all(axis=-1) \
+                      * (np.abs(next_obs[:, 1]) <= .2)
+            done = ~notdone
+
+            done = done[:, None]
+
+        return done
 
     def _get_logprob(self, x, means, variances):
 

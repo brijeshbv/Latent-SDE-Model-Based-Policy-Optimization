@@ -280,7 +280,10 @@ def main(args=None):
         wandb.login()
         wandb.init(project='lsde-mbrl')
     # Initial environment
-    env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
+    if args.env_name == 'InvertedPendulum-v4':
+        env = gym.make(args.env_name)
+    else:
+        env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
 
     # Set random seed
     torch.manual_seed(args.seed)
