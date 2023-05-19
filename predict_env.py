@@ -102,6 +102,8 @@ class PredictEnv:
             reward += numpy.ones_like(curr_pos[:, 0])
             cost = 1e-3 * np.square(action).sum(axis=1)
             reward = reward - cost
+        elif env == "InvertedPendulum-v4":
+            return numpy.ones_like(curr_pos[:,0])
         return reward
 
     def step(self,args, obs, act, total_step, deterministic=False):
