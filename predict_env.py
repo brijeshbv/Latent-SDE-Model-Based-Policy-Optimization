@@ -11,18 +11,35 @@ class PredictEnv:
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
         if env_name == "Hopper-v4":
-            assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+            # healthy_state_range = (-100.0, 100.0),
+            # healthy_z_range = (0.7, float("inf")),
+            # healthy_angle_range = (-0.2, 0.2),
+            # assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+            #
+            # height = next_obs[:, 1]
+            # angle = next_obs[:, 2]
+            # not_done = np.isfinite(next_obs).all(axis=-1) \
+            #            * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
+            #            * (height > .7) \
+            #            * (np.abs(angle) < .2)
+            #
+            # done = ~not_done
+            # done = done[:, None]
 
-            height = next_obs[:, 1]
-            angle = next_obs[:, 2]
-            not_done = np.isfinite(next_obs).all(axis=-1) \
-                       * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
-                       * (height > .7) \
-                       * (np.abs(angle) < .2)
+            z, angle = obs[:, 1], obs[:, 2]
+            state = obs[:, 2:]
 
-            done = ~not_done
-            done = done[:, None]
-            return done
+            min_state, max_state = -100.0, 100.0
+            min_z, max_z = 0.7, float("inf")
+            min_angle, max_angle = -0.2, 0.2
+
+            healthy_state = np.logical_and((min_state < state).all(axis=1), (state < max_state).all(axis=1))
+            healthy_z = np.logical_and((min_z < z), (z < max_z))
+            healthy_angle =np.logical_and( (min_angle < angle), (angle < max_angle) )
+
+            is_healthy = np.logical_and(healthy_state, healthy_z, healthy_angle)
+
+            return np.invert(is_healthy).reshape(-1, 1)
         elif env_name == "Walker2d-v2":
             assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
 
