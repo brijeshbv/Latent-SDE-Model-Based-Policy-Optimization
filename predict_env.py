@@ -1,5 +1,6 @@
 import numpy as np
 
+import matplotlib.pyplot as plt
 
 class PredictEnv:
     def __init__(self, model, env_name, model_type):
@@ -9,7 +10,7 @@ class PredictEnv:
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
-        if env_name == "Hopper-v2":
+        if env_name == "Hopper-v2" or env_name == "Hopper-v4":
             assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
 
             height = next_obs[:, 0]
@@ -66,7 +67,7 @@ class PredictEnv:
 
         return log_prob, stds
 
-    def step(self, obs, act, deterministic=False):
+    def step(self, obs, act, total_step, deterministic=False):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -86,6 +87,8 @@ class PredictEnv:
             ensemble_samples = ensemble_model_means
         else:
             ensemble_samples = ensemble_model_means + np.random.normal(size=ensemble_model_means.shape) * ensemble_model_stds
+
+        self.plt_predictions(ensemble_samples[:,:, 1:], fname=f'results/plt_o/prediction_{total_step}')
 
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch':
@@ -116,3 +119,14 @@ class PredictEnv:
 
         info = {'mean': return_means, 'std': return_stds, 'log_prob': log_prob, 'dev': dev}
         return next_obs, rewards, terminals, info
+
+    def plt_predictions(self, X, fname='reconstructions.png'):
+        tt = 50
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D).astype(int)
+        plt.figure(2, figsize=(40, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[0, :tt, i], 'g.-')
+        plt.savefig(f'{fname}')
+        plt.close()

@@ -202,7 +202,7 @@ class EnsembleDynamicsModel():
         self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
         self.scaler = StandardScaler()
 
-    def train(self,args, inputs, labels,epoch_step,  batch_size=256, holdout_ratio=0., max_epochs_since_update=5):
+    def train(self,args, inputs, labels,epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}

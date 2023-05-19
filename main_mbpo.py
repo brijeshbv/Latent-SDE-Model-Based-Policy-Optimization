@@ -132,7 +132,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
 
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)
@@ -188,7 +188,7 @@ def train_predict_model(args, env_pool, predict_env, epoch_step):
     inputs = np.concatenate((state, action), axis=-1)
     labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
     print(f'training model, {inputs.shape}')
-    predict_env.model.train(args ,inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2)
+    predict_env.model.train(args ,inputs, labels, epoch_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -203,12 +203,12 @@ def resize_model_pool(args, rollout_length, model_pool):
     return new_model_pool
 
 
-def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length):
+def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step):
     state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, trunc = predict_env.step(state, action)
+        next_states, rewards, terminals, trunc = predict_env.step(state, action, total_step)
         # TODO: Push a batch of samples
         model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
@@ -280,7 +280,7 @@ def main(args=None):
         wandb.login()
         wandb.init(project='lsde-mbrl')
     # Initial environment
-    env = gym.make(args.env_name)
+    env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
 
     # Set random seed
     torch.manual_seed(args.seed)
