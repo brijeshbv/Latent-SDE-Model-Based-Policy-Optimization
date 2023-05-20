@@ -121,8 +121,8 @@ class PredictEnv:
         ensemble_model_means[:, :, :] += obs
 
         ensemble_samples = ensemble_model_means
-
-        self.plt_predictions(ensemble_samples, fname=f'results/{args.resdir}/prediction_{total_step}')
+        if total_step % 500 == 0:
+            self.plt_predictions(ensemble_samples, fname=f'results/{args.resdir}/prediction_{total_step}')
 
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':

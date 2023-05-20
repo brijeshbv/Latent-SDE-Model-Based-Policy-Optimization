@@ -192,7 +192,7 @@ class LatentSDE(nn.Module):
         self.optimizer = optim.Adam(params=self.parameters(), lr=lr_init)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=lr_gamma)
         self.kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
-        self.mse_loss = torch.nn.MSELoss()
+
 
     def f(self, t, y):
         return self.f_net(y)
@@ -342,7 +342,15 @@ class LatentSDEModel:
         self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size, self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
+        self.mse_loss = torch.nn.MSELoss()
 
+
+    @torch.no_grad()
+    def ensemble_mse_loss(self, xs_pred, xs):
+        losses = torch.asarray([self.mse_loss(xs_pred[0],xs[0])])
+        for i in range(xs.shape[0] - 1):
+            losses = torch.cat((losses,torch.asarray([self.mse_loss(xs_pred[i+1], xs[i+1])])), dim=0)
+        return losses
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[1]).astype(int)
@@ -358,7 +366,7 @@ class LatentSDEModel:
             plt.close()
 
     def train(self, args, inputs, labels, actions, total_step, batch_size=256, holdout_ratio=0.,
-              max_epochs_since_update=5):
+              max_epochs_since_update=10):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -394,7 +402,7 @@ class LatentSDEModel:
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
         max_epoch = 30
-        for epoch in range(max_epoch):
+        for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
@@ -410,17 +418,17 @@ class LatentSDEModel:
             with torch.no_grad():
 
                 ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
-                holdout_mse_loss, holdout_ensemble_loss = self.ensemble_model.loss(ho_logqp_path, xs_pred, holdout_labels)
-                holdout_ensemble_loss = holdout_ensemble_loss.detach().cpu().numpy()
+                holdout_mse_loss = self.ensemble_mse_loss(xs_pred, holdout_labels)
+                holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
 
-                sorted_loss_idx = np.argsort(holdout_ensemble_loss)
+                sorted_loss_idx = np.argsort(holdout_mse_loss)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
-                break_train = self._save_best(epoch, holdout_ensemble_loss)
-                if epoch == max_epoch -1:
+                break_train = self._save_best(epoch, holdout_mse_loss)
+                if break_train:
                     if total_step % 500 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                           fname=f'results/{args.resdir}/train_plt_{total_step}')
-                    print(f'training ended epoch no, {epoch}')
+                    print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
 
 
