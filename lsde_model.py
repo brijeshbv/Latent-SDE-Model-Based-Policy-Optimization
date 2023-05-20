@@ -303,7 +303,7 @@ class LatentSDE(nn.Module):
         #                                device=device,
         #                                levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
-        print(f'predicting samples, input_size: {xs.shape}')
+        print(f'predicting lsde samples, input_size: {xs.shape}')
 
         z0_mean, z0_sigma = self.qz0_net(self.encoder(xs)).chunk(chunks=2, dim=2)
         z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
@@ -325,8 +325,8 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=64,
-                 context_size=64):
+    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=32,
+                 context_size=32):
         self._snapshots = None
         self._state = None
         self._max_epochs_since_update = None
@@ -401,7 +401,7 @@ class LatentSDEModel:
 
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
-        print(f'training model, train_size : {train_inputs.shape}')
+        print(f'training lsde model, train_size : {train_inputs.shape}')
         max_epoch = 30
         for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])

@@ -9,6 +9,7 @@ import numpy as np
 import math
 import gzip
 import itertools
+import matplotlib.pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -188,7 +189,7 @@ class EnsembleModel(nn.Module):
         self.optimizer.step()
 
 
-class EnsembleDynamicsModel:
+class EnsembleDynamicsModel():
     def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
@@ -201,7 +202,7 @@ class EnsembleDynamicsModel:
         self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
         self.scaler = StandardScaler()
 
-    def train(self, args, inputs, labels, batch_size=256, holdout_ratio=0., max_epochs_since_update=5):
+    def train(self,args, inputs, labels,epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -222,7 +223,7 @@ class EnsembleDynamicsModel:
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
-
+        print(f'training bnn model, train_size : {train_inputs.shape}')
         for epoch in itertools.count():
 
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
@@ -239,14 +240,38 @@ class EnsembleDynamicsModel:
 
             with torch.no_grad():
                 holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
+                predictions = holdout_mean + holdout_logvar.exp() * torch.randn_like(holdout_mean)
                 _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels, inc_var_loss=False)
                 holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
+                    if epoch_step % 500 == 0:
+                        self.plot_gym_results(holdout_labels[:, :50, : self.reward_size],
+                                              predictions[:, :50, :self.reward_size],
+                                              fname=f'results/{args.resdir}/recon_step__rwd{epoch_step}')
+                        self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
+                                              predictions[:, :50, self.reward_size:],
+                                              fname=f'results/{args.resdir}/recon_step_{epoch_step}')
+                    print(f'training model ended, {epoch} epochs')
                     break
             # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
+
+
+    def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+        tt = X.shape[1]
+        D = np.ceil(X.shape[2]).astype(int)
+        nrows = np.ceil(D).astype(int)
+        lag = X.shape[1] - Xrec.shape[1]
+        plt.figure(2, figsize=(40, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[idx, :, i].detach().cpu().numpy(), 'r.-')
+            plt.plot(range(lag, tt), Xrec[idx, :, i].detach().cpu().numpy(), 'b.-')
+        plt.savefig(f'{fname}-{idx}')
+        if show is False:
+            plt.close()
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
@@ -270,6 +295,7 @@ class EnsembleDynamicsModel:
             return False
 
     def predict(self, inputs, batch_size=1024, factored=True):
+        print(f'predicting bnn {inputs.shape} state transitions')
         inputs = self.scaler.transform(inputs)
         ensemble_mean, ensemble_var = [], []
         for i in range(0, inputs.shape[0], batch_size):
@@ -353,8 +379,8 @@ def main():
     model = EnsembleDynamicsModel(num_networks, num_elites, state_size, action_size, reward_size, pred_hidden_size)
 
     # load tf weights and set it to be the inital weights for pytorch model
-    # with open('tf_weights.pkl', 'rb') as f:
-    #     tf_weights = pickle.load(f)
+    with open('tf_weights.pkl', 'rb') as f:
+        tf_weights = pickle.load(f)
     # set_tf_weights(model, tf_weights)
     # x = model.model_list[0].named_parameters()
     # for name, param in model.model_list[0].named_parameters():

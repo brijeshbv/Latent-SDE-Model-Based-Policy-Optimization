@@ -135,8 +135,15 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state_label = next_state - state
     inputs = state
+    print(f'training lsde model, {inputs.shape}')
+    predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
-    predict_env.model.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+
+    inputs = np.concatenate((state, action), axis=-1)
+    delta_state = next_state - state
+    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
+    print(f'training model, {inputs.shape}')
+    predict_env.model_bnn.train(args, inputs, labels, total_step)
 
 
 
@@ -318,15 +325,14 @@ def main(args=None):
                                           args.pred_hidden_size,
                                           use_decay=args.use_decay)
     elif args.model_type == 'torchsde':
-        env_model = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
                                    args.pred_hidden_size)
-    else:
-        env_model = construct_model(obs_dim=state_size, act_dim=action_size, hidden_dim=args.pred_hidden_size,
-                                    num_networks=args.num_networks,
-                                    num_elites=args.num_elites)
+        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
+                                          args.pred_hidden_size,
+                                          use_decay=args.use_decay)
 
     # Predict environments
-    predict_env = PredictEnv(env_model, args.env_name, args.model_type)
+    predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
