@@ -11,6 +11,7 @@ import itertools
 import tqdm
 import wandb
 import math
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -90,7 +91,8 @@ class EnsembleFC(nn.Module):
     ensemble_size: int
     weight: torch.Tensor
 
-    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float =0.000075, bias: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0.000075,
+                 bias: bool = True) -> None:
         super(EnsembleFC, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -101,13 +103,7 @@ class EnsembleFC(nn.Module):
             self.bias = nn.Parameter(torch.Tensor(ensemble_size, out_features)).to(device)
         else:
             self.register_parameter('bias', None)
-        #self.apply(self._init_weights)
         self.reset_parameters()
-
-    # def _init_weights(self, module):
-    #     self.weight.data.normal_(mean=0.0, std=1.0)
-    #     if self.bias is not None:
-    #         self.bias.data.zero_()
 
     def reset_parameters(self) -> None:
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
@@ -115,7 +111,6 @@ class EnsembleFC(nn.Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
             init.uniform_(self.bias, -bound, bound)
-
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         w_times_x = torch.bmm(input, self.weight)
@@ -126,21 +121,23 @@ class EnsembleFC(nn.Module):
             self.in_features, self.out_features, self.bias is not None
         )
 
+
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, network_size ,t0=0,
+    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, network_size, t0=0,
                  skip_every=1,
-                 t1=10, dt=0.1):
+                 t1=1, dt=0.5):
         super(LatentSDE, self).__init__()
         # hyper-parameters
-        kl_anneal_iters = 700
+        kl_anneal_iters = 50
         lr_init = 0.5e-3
         lr_gamma = 0.9997
 
         # Encoder.
-        self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size, ensemble_size=network_size)
+        self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size,
+                               ensemble_size=network_size)
         self.qz0_net = EnsembleFC(context_size, latent_size + latent_size, network_size)
         self.t0 = t0
         self.t1 = t1
@@ -149,18 +146,14 @@ class LatentSDE(nn.Module):
         self.reward_size = reward_size
         self.latent_size = latent_size
         self.use_decay = True
-        self.noise_std = 0.01        # Decoder.
+        self.noise_std = 0.01  # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
@@ -193,7 +186,6 @@ class LatentSDE(nn.Module):
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=lr_gamma)
         self.kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
-
     def f(self, t, y):
         return self.f_net(y)
 
@@ -219,14 +211,15 @@ class LatentSDE(nn.Module):
         no_networks, no_states, dim = xs.shape
         no_networks, no_actions, action_dim = actions.shape
         no_batches = 50
-        xs, actions = xs.reshape((no_networks, no_states // no_batches, no_batches, dim)), actions.reshape((no_networks, no_actions // no_batches, no_batches, action_dim))
-        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[1]+1, device=device)
+        xs, actions = xs.reshape((no_networks, no_states // no_batches, no_batches, dim)), actions.reshape(
+            (no_networks, no_actions // no_batches, no_batches, action_dim))
+        ts = torch.linspace(self.t0, self.t1, steps=xs.shape[1] + 1, device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
 
         ts_horizon = ts.permute((1, 0))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         for i in sampled_t:
-            ctx = self.encoder(xs[:,i,:,:])
+            ctx = self.encoder(xs[:, i, :, :])
             assert not torch.isnan(ctx).any(), f'ctx vector was nan, {i}'
             qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=2)
             assert not torch.isnan(qz0_mean).any(), f'qz0_mean vector was nan, {i}'
@@ -238,12 +231,12 @@ class LatentSDE(nn.Module):
                 latent_and_data = torch.cat((zs[:, -1, :, :], actions[:, i, :, :], xs[:, i, :, :]), dim=2)
             z_encoded = self.action_encode_net(latent_and_data)
 
-            z_encoded = z_encoded.reshape((no_networks * no_batches,-1))
+            z_encoded = z_encoded.reshape((no_networks * no_batches, -1))
             if self.skip_every == 1:
                 t_horizon = ts_horizon[0][i: i + self.skip_every + 1]
             else:
                 t_horizon = ts_horizon[0][i: i + self.skip_every]
-
+            t_horizon = torch.asarray([0, 1])
             adjoint_params = (
                     (ctx,) +
                     tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
@@ -252,9 +245,9 @@ class LatentSDE(nn.Module):
                 self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
             if i == 0:
-                zs = z_pred[-1:].reshape((no_networks,1, no_batches,-1))
+                zs = z_pred[-1:].reshape((no_networks, 1, no_batches, -1))
             else:
-                zs = torch.cat((zs, z_pred[-1:].reshape((no_networks, 1, no_batches,-1))), dim=1)
+                zs = torch.cat((zs, z_pred[-1:].reshape((no_networks, 1, no_batches, -1))), dim=1)
 
             xs_mean = self.projector(zs[:, -1, :, :])
 
@@ -267,18 +260,18 @@ class LatentSDE(nn.Module):
             qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
             pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
             logqp0 = torch.distributions.kl_divergence(qz0, pz0)
-            logqp0 = logqp0.sum(dim=(2)).mean(dim=1)
+            logqp0 = logqp0.sum(dim=2).mean(dim=1)
 
             if i == 0:
                 cum_log_ratio = log_ratio.reshape((no_networks, -1, no_batches))
-                logqp0_cum = logqp0.reshape(-1,1)
+                logqp0_cum = logqp0.reshape(-1, 1)
             else:
                 cum_log_ratio = torch.cat((cum_log_ratio, log_ratio.reshape((no_networks, -1, no_batches))), dim=1)
-                logqp0_cum = torch.cat((logqp0_cum, logqp0.reshape(-1,1)), dim=1)
+                logqp0_cum = torch.cat((logqp0_cum, logqp0.reshape(-1, 1)), dim=1)
 
         logqp_path = cum_log_ratio.mean(dim=2).sum(dim=1) + logqp0_cum.sum(dim=1)
 
-        return  logqp_path, predicted_xs
+        return logqp_path, predicted_xs
 
     def opt_loss(self, loss):
         self.optimizer.zero_grad()
@@ -288,7 +281,7 @@ class LatentSDE(nn.Module):
         self.scheduler.step()
         self.kl_scheduler.step()
 
-    def loss(self,logqp_path,  predicted_xs, xs_target):
+    def loss(self, logqp_path, predicted_xs, xs_target):
         xs_dist = Normal(loc=predicted_xs, scale=self.noise_std)
         log_pxs = xs_dist.log_prob(xs_target).sum(dim=(2)).mean(dim=1)
 
@@ -300,7 +293,8 @@ class LatentSDE(nn.Module):
 
     @torch.no_grad()
     def sample_fromx0(self, xs, actions=None, batch_size=32, steps=2):
-        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0] * xs.shape[1], self.latent_size,), device=device,
+        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0] * xs.shape[1], self.latent_size,),
+                                       device=device,
                                        levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
         print(f'predicting samples, input_size: {xs.shape}')
@@ -309,14 +303,14 @@ class LatentSDE(nn.Module):
         z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
 
         assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
-        latent_and_data = torch.cat((z0[ :, :, :], actions[:, :,  :], xs[:, :, :]), dim=2)
+        latent_and_data = torch.cat((z0[:, :, :], actions[:, :, :], xs[:, :, :]), dim=2)
         z_encoded = self.action_encode_net(latent_and_data)
         # merge ensemble
-        z_encoded = z_encoded.reshape((z_encoded.shape[0]*z_encoded.shape[1], z_encoded.shape[2]))
+        z_encoded = z_encoded.reshape((z_encoded.shape[0] * z_encoded.shape[1], z_encoded.shape[2]))
         assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
         z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
                                  method="reversible_heun")
-        z_pred = z_pred.reshape((xs.shape[0], 2,xs.shape[1], -1))
+        z_pred = z_pred.reshape((xs.shape[0], 2, xs.shape[1], -1))
         assert not torch.isnan(
             z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
         xs_hat = self.projector(z_pred[:, -1, :, :])
@@ -339,18 +333,19 @@ class LatentSDEModel:
         self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size, self.network_size)
+        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size,
+                                        self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
         self.mse_loss = torch.nn.MSELoss()
 
-
     @torch.no_grad()
     def ensemble_mse_loss(self, xs_pred, xs):
-        losses = torch.asarray([self.mse_loss(xs_pred[0],xs[0])])
+        losses = torch.asarray([self.mse_loss(xs_pred[0], xs[0])])
         for i in range(xs.shape[0] - 1):
-            losses = torch.cat((losses,torch.asarray([self.mse_loss(xs_pred[i+1], xs[i+1])])), dim=0)
+            losses = torch.cat((losses, torch.asarray([self.mse_loss(xs_pred[i + 1], xs[i + 1])])), dim=0)
         return losses
+
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[1]).astype(int)
@@ -427,10 +422,9 @@ class LatentSDEModel:
                 if break_train:
                     if total_step % 500 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
-                                          fname=f'results/{args.resdir}/train_plt_{total_step}')
+                                              fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
@@ -450,7 +444,6 @@ class LatentSDEModel:
 
         return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
                                                                                        dtype=torch.float32).to(device)
-
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
@@ -474,13 +467,14 @@ class LatentSDEModel:
             return False
 
     @torch.no_grad()
-    def predict(self,args, inputs, actions, batch_size=128, total_step =0):
+    def predict(self, args, inputs, actions, batch_size=128, total_step=0):
         assert len(inputs) > 0, f'predict input is empty'
-        inputs = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
-        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
+        inputs = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32).repeat(
+            [self.network_size, 1, 1]).to(device)
+        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).repeat(
+            [self.network_size, 1, 1]).to(device)
         num_nets, og_batches, og_dim = inputs.shape
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
         return model_op
-
