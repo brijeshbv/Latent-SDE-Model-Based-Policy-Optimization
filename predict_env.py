@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 
 
 class PredictEnv:
-    def __init__(self, model, env_name, model_type):
-        self.model = model
+    def __init__(self, model_lsde, model_bnn, env_name, model_type):
+        self.model_lsde = model_lsde
+        self.model_bnn = model_bnn
         self.env_name = env_name
         self.model_type = model_type
 
@@ -115,28 +116,34 @@ class PredictEnv:
         else:
             return_single = False
         batch_size = 512
-        ensemble_model_means = self.model.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
+        ensemble_model_means = self.model_lsde.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
+        inputs = np.concatenate((obs, act), axis=-1)
+        ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
+
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
         ensemble_model_means[:, :, :] += obs
 
         ensemble_samples = ensemble_model_means
-        if total_step % 500 == 0:
-            self.plt_predictions(ensemble_samples, fname=f'results/{args.resdir}/prediction_{total_step}')
+        ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
+        ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
+            size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+        if total_step % 250 == 0:
+            self.plt_predictions(ensemble_samples, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
 
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
-            model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
+            model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
         else:
-            model_idxes = self.model.random_inds(batch_size)
+            model_idxes = self.model_lsde.random_inds(batch_size)
         batch_idxes = np.arange(0, batch_size)
 
-        samples = ensemble_samples[model_idxes, batch_idxes]
+        samples = ensemble_samples_bnn[model_idxes, batch_idxes]
         model_means = ensemble_model_means[model_idxes, batch_idxes]
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
-
-        next_obs = samples[:, :]
+        # todo to convert back to lsde, remove 1
+        next_obs = samples[:, 1:]
         rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
         return_means = np.concatenate((model_means[:, :], terminals, model_means[:, :]), axis=-1)
@@ -150,7 +157,7 @@ class PredictEnv:
         info = {'mean': return_means, }
         return next_obs, rewards, terminals, info
 
-    def plt_predictions(self, X, fname='reconstructions.png'):
+    def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[2]).astype(int)
         nrows = np.ceil(D).astype(int)
@@ -158,5 +165,6 @@ class PredictEnv:
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[0, :tt, i], 'g.-')
+            plt.plot(range(0, tt), X_bnn[0, :tt, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()
