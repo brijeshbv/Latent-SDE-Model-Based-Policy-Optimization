@@ -49,7 +49,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=1, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -58,7 +58,7 @@ def readParser():
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
     # todo restore replay size 1000000
-    parser.add_argument('--replay_size', type=int, default=30000, metavar='N',
+    parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=4, metavar='A',
@@ -67,7 +67,7 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=30000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
                         help='rollout number M')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -250,8 +250,8 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
-
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+                if total_step > 250:
+                    rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)
