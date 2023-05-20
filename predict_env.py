@@ -2,6 +2,7 @@ import numpy
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 class PredictEnv:
     def __init__(self, model, env_name, model_type):
         self.model = model
@@ -35,7 +36,7 @@ class PredictEnv:
 
             healthy_state = np.logical_and((min_state < state).all(axis=1), (state < max_state).all(axis=1))
             healthy_z = np.logical_and((min_z < z), (z < max_z))
-            healthy_angle =np.logical_and( (min_angle < angle), (angle < max_angle) )
+            healthy_angle = np.logical_and((min_angle < angle), (angle < max_angle))
 
             is_healthy = np.logical_and(healthy_state, healthy_z, healthy_angle)
 
@@ -96,17 +97,17 @@ class PredictEnv:
         return log_prob, stds
 
     def get_reward(self, env, action, curr_pos, next_pos):
-        reward = numpy.zeros_like(curr_pos[:,0])
+        reward = numpy.zeros_like(curr_pos[:, 0])
         if env == "Hopper-v4":
             reward = (next_pos[:, 0] - curr_pos[:, 0]) / 0.008
             reward += numpy.ones_like(curr_pos[:, 0])
             cost = 1e-3 * np.square(action).sum(axis=1)
             reward = reward - cost
         elif env == "InvertedPendulum-v4":
-            return numpy.ones_like(curr_pos[:,0])
+            return numpy.ones_like(curr_pos[:, 0])
         return reward
 
-    def step(self,args, obs, act, total_step, deterministic=False):
+    def step(self, args, obs, act, total_step, deterministic=False):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -138,7 +139,7 @@ class PredictEnv:
         next_obs = samples[:, :]
         rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
-        return_means = np.concatenate((model_means[:, :1], terminals, model_means[:, 1:]), axis=-1)
+        return_means = np.concatenate((model_means[:, :], terminals, model_means[:, :]), axis=-1)
 
         if return_single:
             next_obs = next_obs[0]

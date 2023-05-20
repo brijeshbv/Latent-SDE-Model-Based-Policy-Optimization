@@ -72,9 +72,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.lin = nn.Sequential(
             EnsembleFC(input_size, hidden_size, ensemble_size),
-            nn.ReLU(),
-            EnsembleFC(hidden_size, hidden_size, ensemble_size),
-            nn.ReLU(),
+            nn.Tanh(),
             EnsembleFC(hidden_size, output_size, ensemble_size),
         )
 
@@ -182,9 +180,7 @@ class LatentSDE(nn.Module):
         self.projector = nn.Sequential(
             EnsembleFC(latent_size, hidden_size, network_size),
             nn.Tanh(),
-            EnsembleFC(hidden_size, hidden_size, network_size),
-            nn.Tanh(),
-            EnsembleFC(hidden_size, data_size, network_size),
+            EnsembleFC(hidden_size, data_size, network_size)
         )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
@@ -344,7 +340,8 @@ class LatentSDEModel:
         self.network_size = network_size
         self.elite_model_idxes = []
         self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size, self.network_size)
-        self.scaler = StandardScaler()
+        self.state_scaler = StandardScaler()
+        self.action_scaler = StandardScaler()
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = 50
@@ -378,15 +375,13 @@ class LatentSDEModel:
         holdout_inputs, holdout_labels = inputs[:num_holdout], labels[:num_holdout]
         holdout_actions_inputs = actions[:num_holdout]
 
-        self.scaler.fit(train_inputs)
-        train_inputs = self.scaler.transform(train_inputs)
-        self.scaler.fit(holdout_inputs)
-        holdout_inputs = self.scaler.transform(holdout_inputs)
+        self.state_scaler.fit(train_inputs)
+        train_inputs = self.state_scaler.transform(train_inputs)
+        holdout_inputs = self.state_scaler.transform(holdout_inputs)
 
-        self.scaler.fit(train_actions_inputs)
-        train_actions_inputs = self.scaler.transform(train_actions_inputs)
-        self.scaler.fit(holdout_actions_inputs)
-        holdout_actions_inputs = self.scaler.transform(holdout_actions_inputs)
+        self.action_scaler.fit(train_actions_inputs)
+        train_actions_inputs = self.action_scaler.transform(train_actions_inputs)
+        holdout_actions_inputs = self.action_scaler.transform(holdout_actions_inputs)
 
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
@@ -398,7 +393,8 @@ class LatentSDEModel:
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training model, train_size : {train_inputs.shape}')
-        for epoch in itertools.count():
+        max_epoch = 30
+        for epoch in range(max_epoch):
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
                 idx = train_idx[start_pos: start_pos + batch_size]
@@ -420,7 +416,7 @@ class LatentSDEModel:
                 sorted_loss_idx = np.argsort(holdout_ensemble_loss)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_ensemble_loss)
-                if break_train:
+                if epoch == max_epoch -1:
                     if total_step % 500 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                           fname=f'results/{args.resdir}/train_plt_{total_step}')
@@ -472,10 +468,8 @@ class LatentSDEModel:
     @torch.no_grad()
     def predict(self,args, inputs, actions, batch_size=128, total_step =0):
         assert len(inputs) > 0, f'predict input is empty'
-        self.scaler.fit(inputs)
-        inputs = torch.asarray(self.scaler.transform(inputs), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
-        self.scaler.fit(actions)
-        actions = torch.asarray(self.scaler.transform(actions), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
+        inputs = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
+        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).repeat([self.network_size, 1, 1]).to(device)
         num_nets, og_batches, og_dim = inputs.shape
         model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
