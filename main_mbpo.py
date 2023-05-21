@@ -51,7 +51,7 @@ def readParser():
     # todo was 7
     parser.add_argument('--num_networks', type=int, default=5, metavar='E',
                         help='ensemble size (default: 7)')
-    parser.add_argument('--num_elites', type=int, default=5, metavar='E',
+    parser.add_argument('--num_elites', type=int, default=3, metavar='E',
                         help='elite size (default: 5)')
     parser.add_argument('--pred_hidden_size', type=int, default=200, metavar='E',
                         help='hidden size for predictive model')
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=1000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -250,7 +250,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
-                if total_step > 250:
+                if total_step > 500:
                     rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)

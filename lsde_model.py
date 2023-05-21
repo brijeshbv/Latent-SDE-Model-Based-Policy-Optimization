@@ -299,9 +299,9 @@ class LatentSDE(nn.Module):
 
     @torch.no_grad()
     def sample_fromx0(self, xs, actions=None, batch_size=32, steps=2):
-        bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0] * xs.shape[1], self.latent_size,),
-                                       device=device,
-                                       levy_area_approximation="space-time")
+        # bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0] * xs.shape[1], self.latent_size,),
+        #                                device=device,
+        #                                levy_area_approximation="space-time")
         t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
         print(f'predicting samples, input_size: {xs.shape}')
 
@@ -314,8 +314,8 @@ class LatentSDE(nn.Module):
         # merge ensemble
         z_encoded = z_encoded.reshape((z_encoded.shape[0] * z_encoded.shape[1], z_encoded.shape[2]))
         assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
-        z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, bm=bm,
-                                 method="reversible_heun")
+        z_pred = torchsde.sdeint_adjoint(self, z_encoded, t_horizon, dt=self.dt,
+                                         method="reversible_heun")
         z_pred = z_pred.reshape((xs.shape[0], 2, xs.shape[1], -1))
         assert not torch.isnan(
             z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
@@ -426,7 +426,7 @@ class LatentSDEModel:
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_loss)
                 if break_train:
-                    if total_step % 500 == 0:
+                    if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
@@ -480,7 +480,8 @@ class LatentSDEModel:
         actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).repeat(
             [self.network_size, 1, 1]).to(device)
         num_nets, og_batches, og_dim = inputs.shape
-        model_op = self.ensemble_model.sample_fromx0(inputs, actions, batch_size)
+        print(f'predicting {inputs.shape} samples')
+        _, model_op = self.ensemble_model(inputs, actions)
         assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
         assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
         return model_op
