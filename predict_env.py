@@ -116,7 +116,7 @@ class PredictEnv:
         else:
             return_single = False
         batch_size = 512
-        ensemble_model_means = self.model_lsde.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
+        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
         inputs = np.concatenate((obs, act), axis=-1)
         ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
 
@@ -124,24 +124,23 @@ class PredictEnv:
         ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
             size=ensemble_model_means_bnn.shape) * ensemble_model_stds
         if total_step % 250 == 0:
-            self.plt_predictions(ensemble_model_means, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
+            self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
-        ensemble_model_means[:, :, :] += obs
-        ensemble_samples = ensemble_model_means
+        ensemble_lsde_model_means[:, :, :] += obs
 
         ensemble_samples_bnn[:, :, 1:] += obs
 
-        num_models, batch_size, _ = ensemble_model_means.shape
+        num_models, batch_size, _ = ensemble_lsde_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
             model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
         else:
             model_idxes = self.model_lsde.random_inds(batch_size)
         batch_idxes = np.arange(0, batch_size)
 
-        samples = ensemble_samples_bnn[model_idxes, batch_idxes]
-        model_means = ensemble_model_means[model_idxes, batch_idxes]
+        samples = ensemble_lsde_model_means[model_idxes, batch_idxes]
+        model_means = ensemble_lsde_model_means[model_idxes, batch_idxes]
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
