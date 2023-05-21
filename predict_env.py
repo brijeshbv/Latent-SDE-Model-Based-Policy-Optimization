@@ -120,16 +120,18 @@ class PredictEnv:
         inputs = np.concatenate((obs, act), axis=-1)
         ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
 
-        # no_batches = obs.shape[0] // batch_size
-        # obs = obs[:no_batches * batch_size, :]
-        ensemble_model_means[:, :, :] += obs
-
-        ensemble_samples = ensemble_model_means
         ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
         ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
             size=ensemble_model_means_bnn.shape) * ensemble_model_stds
         if total_step % 250 == 0:
-            self.plt_predictions(ensemble_samples, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
+            self.plt_predictions(ensemble_model_means, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
+
+        # no_batches = obs.shape[0] // batch_size
+        # obs = obs[:no_batches * batch_size, :]
+        ensemble_model_means[:, :, :] += obs
+        ensemble_samples = ensemble_model_means
+
+        ensemble_samples_bnn[:, :, 1:] += obs
 
         num_models, batch_size, _ = ensemble_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':

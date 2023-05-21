@@ -131,7 +131,7 @@ class LatentSDE(nn.Module):
                  t1=1, dt=0.5):
         super(LatentSDE, self).__init__()
         # hyper-parameters
-        kl_anneal_iters = 50
+        kl_anneal_iters = 700
         lr_init = 0.5e-3
         lr_gamma = 0.9997
 
