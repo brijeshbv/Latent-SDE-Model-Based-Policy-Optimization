@@ -73,7 +73,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.lin = nn.Sequential(
             EnsembleFC(input_size, hidden_size, ensemble_size),
-            nn.Tanh(),
+            nn.Sigmoid(),
             EnsembleFC(hidden_size, output_size, ensemble_size),
         )
 
@@ -149,12 +149,16 @@ class LatentSDE(nn.Module):
         self.noise_std = 0.01  # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.Tanh(),
+            nn.Sigmoid(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Sigmoid(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.Tanh(),
+            nn.Sigmoid(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Sigmoid(),
             nn.Linear(hidden_size, latent_size),
         )
 
@@ -163,7 +167,7 @@ class LatentSDE(nn.Module):
             [
                 nn.Sequential(
                     nn.Linear(1, hidden_size),
-                    nn.ReLU(),
+                    nn.Sigmoid(),
                     nn.Linear(hidden_size, 1),
                 )
                 for _ in range(latent_size)
@@ -172,7 +176,9 @@ class LatentSDE(nn.Module):
 
         self.projector = nn.Sequential(
             EnsembleFC(latent_size, hidden_size, network_size),
-            nn.Tanh(),
+            nn.Sigmoid(),
+            EnsembleFC(hidden_size, hidden_size, network_size),
+            nn.Sigmoid(),
             EnsembleFC(hidden_size, data_size, network_size)
         )
         latent_and_action_size = latent_size + action_dim + data_size
