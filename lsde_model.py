@@ -131,8 +131,8 @@ class LatentSDE(nn.Module):
                  t1=1, dt=0.5):
         super(LatentSDE, self).__init__()
         # hyper-parameters
-        kl_anneal_iters = 50
-        lr_init = 0.5e-3
+        kl_anneal_iters = 700
+        lr_init = 1e-2
         lr_gamma = 0.9997
 
         # Encoder.
@@ -325,8 +325,8 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=64,
-                 context_size=64):
+    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=32,
+                 context_size=32):
         self._snapshots = None
         self._state = None
         self._max_epochs_since_update = None
