@@ -144,7 +144,7 @@ class PredictEnv:
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
-        next_obs = samples[:, 1:]
+        next_obs = samples[:, :]
         rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
         return_means = np.concatenate((model_means[:, :], terminals, model_means[:, :]), axis=-1)
