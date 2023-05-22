@@ -20,6 +20,7 @@ from sample_env import EnvSampler
 from tf_models.constructor import construct_model, format_samples_for_training
 from lsde_model import LatentSDEModel
 
+equalizing_factor = None
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -112,7 +113,6 @@ def readParser():
     parser.add_argument('--exclude_current_positions_from_observation', default=False, metavar="A",
                         help='exclude_current_positions_from_observation')
 
-
     return parser.parse_args()
 
 
@@ -125,31 +125,38 @@ def exploration_before_start(args, env_sampler, env_pool, agent):
 def set_rollout_length(args, epoch_step):
     rollout_length = (min(max(args.rollout_min_length + (epoch_step - args.rollout_min_epoch)
                               / (args.rollout_max_epoch - args.rollout_min_epoch) * (
-                                          args.rollout_max_length - args.rollout_min_length),
+                                      args.rollout_max_length - args.rollout_min_length),
                               args.rollout_min_length), args.rollout_max_length))
     return int(rollout_length)
+
+
+def get_equalizing_factor(delta_state):
+    equalizing_factor = np.sort(np.absolute(delta_state).mean(axis=0))[::-1]
+    equalizing_factor = equalizing_factor[0].repeat(equalizing_factor.shape[0]) // equalizing_factor
+    return equalizing_factor[::-1]
 
 
 def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state_label = next_state - state
+    global equalizing_factor
+    if equalizing_factor is None:
+        equalizing_factor = get_equalizing_factor(delta_state_label)
+    delta_state_label = delta_state_label * equalizing_factor
     inputs = state
     print(f'training lsde model, {inputs.shape}')
     if total_step < 501:
-        for i in range(3):
+        for i in range(5):
             predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
     else:
         predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
-
     inputs = np.concatenate((state, action), axis=-1)
-    delta_state = next_state - state
-    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
+
+    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state_label), axis=-1)
     print(f'training model, {inputs.shape}')
     predict_env.model_bnn.train(args, inputs, labels, total_step)
-
-
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -169,7 +176,7 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step)
+        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, equalizing_factor)
         # TODO: Push a batch of samples
         model_pool.push_batch(
             [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
@@ -197,13 +204,13 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
                 int(model_batch_size))
             batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate(
                 (env_state, model_state), axis=0), \
-                                                                                    np.concatenate(
-                                                                                        (env_action, model_action),
-                                                                                        axis=0), np.concatenate(
+                np.concatenate(
+                    (env_action, model_action),
+                    axis=0), np.concatenate(
                 (np.reshape(env_reward, (env_reward.shape[0], -1)), model_reward), axis=0), \
-                                                                                    np.concatenate((env_next_state,
-                                                                                                    model_next_state),
-                                                                                                   axis=0), np.concatenate(
+                np.concatenate((env_next_state,
+                                model_next_state),
+                               axis=0), np.concatenate(
                 (np.reshape(env_done, (env_done.shape[0], -1)), model_done), axis=0)
         else:
             batch_state, batch_action, batch_reward, batch_next_state, batch_done = env_state, env_action, env_reward, env_next_state, env_done
@@ -311,7 +318,8 @@ def main(args=None):
     if args.env_name == 'InvertedPendulum-v4':
         env = gym.make(args.env_name)
     else:
-        env = gym.make(args.env_name,exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
+        env = gym.make(args.env_name,
+                       exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
 
     # Set random seed
     torch.manual_seed(args.seed)
@@ -330,10 +338,11 @@ def main(args=None):
                                           use_decay=args.use_decay)
     elif args.model_type == 'torchsde':
         env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
-                                   args.pred_hidden_size)
-        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
-                                          args.pred_hidden_size,
-                                          use_decay=args.use_decay)
+                                    args.pred_hidden_size)
+        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+                                           args.reward_size,
+                                           args.pred_hidden_size,
+                                           use_decay=args.use_decay)
 
     # Predict environments
     predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)

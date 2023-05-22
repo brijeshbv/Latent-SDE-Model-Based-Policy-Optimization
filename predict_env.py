@@ -2,7 +2,6 @@ import numpy
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 class PredictEnv:
     def __init__(self, model_lsde, model_bnn, env_name, model_type):
         self.model_lsde = model_lsde
@@ -108,7 +107,7 @@ class PredictEnv:
             return numpy.ones_like(curr_pos[:, 0])
         return reward
 
-    def step(self, args, obs, act, total_step, deterministic=False):
+    def step(self, args, obs, act, total_step, equalizing_factor):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -128,11 +127,13 @@ class PredictEnv:
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
+        ensemble_lsde_model_means = ensemble_lsde_model_means / equalizing_factor
         ensemble_lsde_model_means[:, :, :] += obs
 
+        ensemble_samples_bnn[:, :, 1:] = ensemble_samples_bnn[:, :, 1:] / equalizing_factor
         ensemble_samples_bnn[:, :, 1:] += obs
 
-        num_models, batch_size, _ = ensemble_lsde_model_means.shape
+        num_models, batch_size, _ = ensemble_samples_bnn.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
             model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
         else:
