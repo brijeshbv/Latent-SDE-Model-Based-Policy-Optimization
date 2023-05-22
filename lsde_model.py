@@ -72,9 +72,9 @@ class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, ensemble_size):
         super(Encoder, self).__init__()
         self.lin = nn.Sequential(
-            EnsembleFC(input_size, hidden_size, ensemble_size),
+            EnsembleFC(input_size, hidden_size, ensemble_size, weight_decay=0.000025),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, output_size, ensemble_size),
+            EnsembleFC(hidden_size, output_size, ensemble_size, weight_decay=0.00005),
         )
 
     def forward(self, inp):
@@ -175,11 +175,11 @@ class LatentSDE(nn.Module):
         )
 
         self.projector = nn.Sequential(
-            EnsembleFC(latent_size, hidden_size, network_size),
+            EnsembleFC(latent_size, hidden_size, network_size, weight_decay=0.000025),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, hidden_size, network_size),
+            EnsembleFC(hidden_size, hidden_size, network_size, weight_decay=0.00005),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, data_size, network_size)
+            EnsembleFC(hidden_size, data_size, network_size, weight_decay=0.000075)
         )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
