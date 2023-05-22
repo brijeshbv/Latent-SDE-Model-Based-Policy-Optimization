@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=3000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=4000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -138,9 +138,9 @@ def train_predict_model(args, env_pool, predict_env, total_step):
 
     if total_step < 501:
         for i in range(3):
-            predict_env.model.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+            predict_env.model.train(args, inputs, delta_state_label, action, total_step)
     else:
-        predict_env.model.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+        predict_env.model.train(args, inputs, delta_state_label, action, total_step)
 
 
 
