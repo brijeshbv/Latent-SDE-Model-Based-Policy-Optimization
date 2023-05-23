@@ -24,6 +24,7 @@ class ReplayMemory:
             self.buffer[self.position : self.position + len(batch)] = batch
             self.position += len(batch)
         else:
+            print(f'buffer filled, starting over from position, capacity: {self.capacity}, buffer len: {len(self.buffer)}, position: {self.position},batch len: {len(batch)} ')
             self.buffer[self.position : len(self.buffer)] = batch[:len(self.buffer) - self.position]
             self.buffer[:len(batch) - len(self.buffer) + self.position] = batch[len(self.buffer) - self.position:]
             self.position = len(batch) - len(self.buffer) + self.position

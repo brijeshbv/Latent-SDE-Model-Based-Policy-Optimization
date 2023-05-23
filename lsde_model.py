@@ -106,11 +106,12 @@ class EnsembleFC(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
-        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-            init.uniform_(self.bias, -bound, bound)
+        pass
+        # init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        # if self.bias is not None:
+        #     fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+        #     bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+        #     init.uniform_(self.bias, -bound, bound)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         w_times_x = torch.bmm(input, self.weight)
@@ -120,7 +121,20 @@ class EnsembleFC(nn.Module):
         return 'in_features={}, out_features={}, bias={}'.format(
             self.in_features, self.out_features, self.bias is not None
         )
+def init_weights(m):
+    def truncated_normal_init(t, mean=0.0, std=0.01):
+        torch.nn.init.normal_(t, mean=mean, std=std)
+        while True:
+            cond = torch.logical_or(t < mean - 2 * std, t > mean + 2 * std)
+            if not torch.sum(cond):
+                break
+            t = torch.where(cond, torch.nn.init.normal_(torch.ones(t.shape), mean=mean, std=std), t)
+        return t
 
+    if type(m) == nn.Linear or isinstance(m, EnsembleFC):
+        input_dim = m.in_features
+        truncated_normal_init(m.weight, std=1 / (2 * np.sqrt(input_dim)))
+        m.bias.data.fill_(0.0)
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
@@ -191,6 +205,7 @@ class LatentSDE(nn.Module):
         self.optimizer = optim.Adam(params=self.parameters(), lr=lr_init)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=lr_gamma)
         self.kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
+        self.apply(init_weights)
 
     def f(self, t, y):
         return self.f_net(y)
@@ -432,6 +447,9 @@ class LatentSDEModel:
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
                 elif total_step <= 1000 and epoch > 40:
+                    if total_step % 250 == 0:
+                        self.plot_gym_results(holdout_labels[0], xs_pred[0],
+                                              fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'early data training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
 
