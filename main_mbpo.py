@@ -50,7 +50,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=5, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=2, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=3, metavar='E',
                         help='elite size (default: 5)')
@@ -62,7 +62,7 @@ def readParser():
     parser.add_argument('--replay_size', type=int, default=300000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
-    parser.add_argument('--model_retain_epochs', type=int, default=4, metavar='A',
+    parser.add_argument('--model_retain_epochs', type=int, default=2, metavar='A',
                         help='retain epochs')
     # todo was 250
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
@@ -146,11 +146,8 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     delta_state_label = delta_state_label * equalizing_factor
     inputs = state
     print(f'training lsde model, {inputs.shape}')
-    if total_step < 501:
-        for i in range(5):
-            predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
-    else:
-        predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+
+    predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
     inputs = np.concatenate((state, action), axis=-1)
 

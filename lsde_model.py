@@ -133,7 +133,7 @@ class LatentSDE(nn.Module):
         # hyper-parameters
         kl_anneal_iters = 700
         lr_init = 1e-3
-        lr_gamma = 0.9997
+        lr_gamma = 0.9992
 
         # Encoder.
         self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size,
@@ -425,12 +425,16 @@ class LatentSDEModel:
                 sorted_loss_idx = np.argsort(holdout_mse_loss)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_loss)
-                if break_train:
+                if break_train and total_step > 1000:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
+                elif total_step <= 1000 and epoch > 40:
+                    print(f'early data training ended epoch no, {epoch}, {holdout_mse_loss}')
+                    break
+
 
     def batchify(self, data, batch_size):
         no_batches, dim = data.shape
