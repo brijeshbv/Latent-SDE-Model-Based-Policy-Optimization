@@ -16,6 +16,7 @@ class ReplayMemory:
         self.position = (self.position + 1) % self.capacity
 
     def push_batch(self, batch):
+        print(f'capacity: {self.capacity}, buffer len: {len(self.buffer)}, position: {self.position},batch len: {len(batch)} ')
         if len(self.buffer) < self.capacity:
             append_len = min(self.capacity - len(self.buffer), len(batch))
             self.buffer.extend([None] * append_len)
