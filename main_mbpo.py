@@ -7,9 +7,7 @@ from itertools import count
 import tqdm
 import logging
 
-import os
-import os.path as osp
-import json
+
 import wandb
 
 from sac.replay_memory import ReplayMemory
@@ -17,7 +15,6 @@ from sac.sac import SAC
 from model import EnsembleDynamicsModel
 from predict_env import PredictEnv
 from sample_env import EnvSampler
-from tf_models.constructor import construct_model, format_samples_for_training
 from lsde_model import LatentSDEModel
 
 equalizing_factor = None
@@ -50,7 +47,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=2, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=5, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=3, metavar='E',
                         help='elite size (default: 5)')
@@ -265,7 +262,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
-                if total_step > 500:
+                if total_step > 750:
                     rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
