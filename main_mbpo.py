@@ -59,7 +59,7 @@ def readParser():
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
     # todo restore replay size 1000000
-    parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
+    parser.add_argument('--replay_size', type=int, default=300000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=4, metavar='A',
