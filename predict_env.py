@@ -123,15 +123,15 @@ class PredictEnv:
         ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
             size=ensemble_model_means_bnn.shape) * ensemble_model_stds
         if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, 1:], fname=f'results/{args.resdir}/prediction_{total_step}')
+            self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
         ensemble_lsde_model_means = ensemble_lsde_model_means / equalizing_factor
         ensemble_lsde_model_means[:, :, :] += obs
 
-        ensemble_samples_bnn[:, :, 1:] = ensemble_samples_bnn[:, :, 1:] / equalizing_factor
-        ensemble_samples_bnn[:, :, 1:] += obs
+        ensemble_samples_bnn[:, :, :] = ensemble_samples_bnn[:, :, :] / equalizing_factor
+        ensemble_samples_bnn[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_samples_bnn.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
@@ -166,7 +166,7 @@ class PredictEnv:
         plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[0, :tt, i], 'g.-')
-            plt.plot(range(0, tt), X_bnn[0, :tt, i], 'r.-')
+            plt.plot(range(0, tt), X[0, -tt:, i], 'g.-')
+            plt.plot(range(0, tt), X_bnn[0, -tt:, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()
