@@ -15,9 +15,9 @@ from sac.sac import SAC
 from model import EnsembleDynamicsModel
 from predict_env import PredictEnv
 from sample_env import EnvSampler
-from lsde_model import LatentSDEModel
+from lsde_model import LatentSDEModel, StandardScaler
 
-equalizing_factor = None
+normalizer = None
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -129,7 +129,7 @@ def set_rollout_length(args, epoch_step):
 
 def get_equalizing_factor(delta_state):
     equalizing_factor = np.sort(np.absolute(delta_state).mean(axis=0))[::-1]
-    equalizing_factor = equalizing_factor[0].repeat(equalizing_factor.shape[0]) // equalizing_factor
+    equalizing_factor = equalizing_factor[2].repeat(equalizing_factor.shape[0]) / equalizing_factor
     return equalizing_factor[::-1]
 
 
@@ -137,10 +137,11 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state_label = next_state - state
-    global equalizing_factor
-    if equalizing_factor is None:
-        equalizing_factor = get_equalizing_factor(delta_state_label)
-    delta_state_label = delta_state_label * equalizing_factor
+    global normalizer
+    if normalizer is None:
+        normalizer = StandardScaler()
+        normalizer.fit(delta_state_label)
+    delta_state_label = normalizer.transform(delta_state_label)
     inputs = state
     print(f'training lsde model, {inputs.shape}')
 
@@ -168,7 +169,7 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, equalizing_factor)
+        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, normalizer)
         # TODO: Push a batch of samples
         model_pool.push_batch(
             [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
