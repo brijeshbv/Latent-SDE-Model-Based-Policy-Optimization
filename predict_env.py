@@ -133,7 +133,7 @@ class PredictEnv:
         ensemble_samples_bnn[:, :, :] = normalizer.inverse_transform(ensemble_samples_bnn)
         ensemble_samples_bnn[:, :, :] += obs
 
-        num_models, batch_size, _ = ensemble_samples_bnn.shape
+        num_models, batch_size, _ = ensemble_lsde_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
             model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
         else:
