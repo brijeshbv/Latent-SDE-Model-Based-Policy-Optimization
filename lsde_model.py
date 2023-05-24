@@ -253,10 +253,6 @@ class LatentSDE(nn.Module):
             z_encoded = self.action_encode_net(latent_and_data)
 
             z_encoded = z_encoded.reshape((no_networks * no_batches, -1))
-            if self.skip_every == 1:
-                t_horizon = ts_horizon[0][i: i + self.skip_every + 1]
-            else:
-                t_horizon = ts_horizon[0][i: i + self.skip_every]
             t_horizon = torch.asarray([0, 1])
             adjoint_params = (
                     (ctx,) +
@@ -269,9 +265,7 @@ class LatentSDE(nn.Module):
                 zs = z_pred[-1:].reshape((no_networks, 1, no_batches, -1))
             else:
                 zs = torch.cat((zs, z_pred[-1:].reshape((no_networks, 1, no_batches, -1))), dim=1)
-
             xs_mean = self.projector(zs[:, -1, :, :])
-
             if i == 0:
                 predicted_xs = xs_mean
             else:
@@ -312,35 +306,10 @@ class LatentSDE(nn.Module):
             loss += self.get_decay_loss()
         return loss, loss_ensemble
 
-    @torch.no_grad()
-    def sample_fromx0(self, xs, actions=None, batch_size=32, steps=2):
-        # bm = torchsde.BrownianInterval(t0=self.t0, t1=self.t1, size=(xs.shape[0] * xs.shape[1], self.latent_size,),
-        #                                device=device,
-        #                                levy_area_approximation="space-time")
-        t_horizon = torch.linspace(self.t0, self.t1, steps=steps, device=device)
-        print(f'predicting lsde samples, input_size: {xs.shape}')
-
-        z0_mean, z0_sigma = self.qz0_net(self.encoder(xs)).chunk(chunks=2, dim=2)
-        z0 = z0_mean + z0_sigma.exp() * torch.randn_like(z0_mean)
-
-        assert not torch.isnan(z0).any(), f'z0 latent vector was nan, {z0}'
-        latent_and_data = torch.cat((z0[:, :, :], actions[:, :, :], xs[:, :, :]), dim=2)
-        z_encoded = self.action_encode_net(latent_and_data)
-        # merge ensemble
-        z_encoded = z_encoded.reshape((z_encoded.shape[0] * z_encoded.shape[1], z_encoded.shape[2]))
-        assert not torch.isnan(z_encoded).any(), f'input latent vector was nan, {z_encoded}'
-        z_pred = torchsde.sdeint_adjoint(self, z_encoded, t_horizon, dt=self.dt,
-                                         method="reversible_heun")
-        z_pred = z_pred.reshape((xs.shape[0], 2, xs.shape[1], -1))
-        assert not torch.isnan(
-            z_pred).any(), f'some latent vector was nan, {z_pred.shape}, {z_encoded.shape} , {torch.gather(z_encoded, 0, torch.argwhere(torch.isnan(z_pred[-1])))}'
-        xs_hat = self.projector(z_pred[:, -1, :, :])
-
-        return xs_hat
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=32,
+    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=32,
                  context_size=32):
         self._snapshots = None
         self._state = None
@@ -351,7 +320,6 @@ class LatentSDEModel:
         self.model_list = []
         self.state_size = state_size
         self.action_size = action_size
-        self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
         self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size,
@@ -375,8 +343,8 @@ class LatentSDEModel:
         plt.figure(2, figsize=(40, 40))
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[:tt, i].detach().cpu().numpy(), 'r.-')
-            plt.plot(range(lag, tt), Xrec[:tt, i].detach().cpu().numpy(), 'b.-')
+            plt.plot(range(0, tt), X[-tt:, i].detach().cpu().numpy(), 'r.-')
+            plt.plot(range(lag, tt), Xrec[-tt:, i].detach().cpu().numpy(), 'b.-')
         plt.savefig(f'{fname}-{idx}')
         if show is False:
             plt.close()

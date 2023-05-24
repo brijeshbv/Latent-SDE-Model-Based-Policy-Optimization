@@ -85,7 +85,8 @@ class EnsembleFC(nn.Module):
     ensemble_size: int
     weight: torch.Tensor
 
-    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0., bias: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0.,
+                 bias: bool = True) -> None:
         super(EnsembleFC, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -101,7 +102,6 @@ class EnsembleFC(nn.Module):
     def reset_parameters(self) -> None:
         pass
 
-
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         w_times_x = torch.bmm(input, self.weight)
         return torch.add(w_times_x, self.bias[:, None, :])  # w times x + b
@@ -113,7 +113,7 @@ class EnsembleFC(nn.Module):
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, state_size, action_size, reward_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
+    def __init__(self, state_size, action_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
         super(EnsembleModel, self).__init__()
         self.hidden_size = hidden_size
         self.nn1 = EnsembleFC(state_size + action_size, hidden_size, ensemble_size, weight_decay=0.000025)
@@ -122,7 +122,7 @@ class EnsembleModel(nn.Module):
         self.nn4 = EnsembleFC(hidden_size, hidden_size, ensemble_size, weight_decay=0.000075)
         self.use_decay = use_decay
 
-        self.output_dim = state_size + reward_size
+        self.output_dim = state_size
         # Add variance output
         self.nn5 = EnsembleFC(hidden_size, self.output_dim * 2, ensemble_size, weight_decay=0.0001)
 
@@ -190,19 +190,18 @@ class EnsembleModel(nn.Module):
 
 
 class EnsembleDynamicsModel():
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
+    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
         self.model_list = []
         self.state_size = state_size
         self.action_size = action_size
-        self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
+        self.ensemble_model = EnsembleModel(state_size, action_size, network_size, hidden_size, use_decay=use_decay)
         self.scaler = StandardScaler()
 
-    def train(self,args, inputs, labels,epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
+    def train(self, args, inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -241,23 +240,20 @@ class EnsembleDynamicsModel():
             with torch.no_grad():
                 holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
                 predictions = holdout_mean + holdout_logvar.exp() * torch.randn_like(holdout_mean)
-                _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels, inc_var_loss=False)
+                _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels,
+                                                                 inc_var_loss=False)
                 holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
-                    if epoch_step % 500 == 0:
-                        self.plot_gym_results(holdout_labels[:, :50, : self.reward_size],
-                                              predictions[:, :50, :self.reward_size],
-                                              fname=f'results/{args.resdir}/recon_step__rwd{epoch_step}')
+                    if epoch_step % 250 == 0:
                         self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
-                                              predictions[:, :50, self.reward_size:],
-                                              fname=f'results/{args.resdir}/recon_step_{epoch_step}')
-                    print(f'training model ended, {epoch} epochs')
+                                              predictions[:, :50, :],
+                                              fname=f'results/{args.resdir}/bnn_step_{epoch_step}')
+                    print(f'training ended epoch no, {epoch}, {holdout_mse_losses}')
                     break
             # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
-
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = X.shape[1]
