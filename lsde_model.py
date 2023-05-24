@@ -147,7 +147,7 @@ class LatentSDE(nn.Module):
         # hyper-parameters
         kl_anneal_iters = 700
         lr_init = 1e-3
-        lr_gamma = 0.9950
+        lr_gamma = 0.9992
 
         # Encoder.
         self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size,
@@ -301,7 +301,7 @@ class LatentSDE(nn.Module):
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
         #* self.kl_scheduler.val
         loss_ensemble = -log_pxs + logqp_path
-        loss = loss_ensemble.sum(dim=0)
+        loss = loss_ensemble.mean(dim=0)
         if self.use_decay:
             loss += self.get_decay_loss()
         return loss, loss_ensemble
