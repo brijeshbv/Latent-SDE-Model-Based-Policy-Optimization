@@ -241,7 +241,7 @@ class EnsembleDynamicsModel():
                 holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
                 predictions = holdout_mean + holdout_logvar.exp() * torch.randn_like(holdout_mean)
                 _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels,
-                                                                 inc_var_loss=False)
+                                                                 inc_var_loss=True)
                 holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
