@@ -107,7 +107,7 @@ class PredictEnv:
             return numpy.ones_like(curr_pos[:, 0])
         return reward
 
-    def step(self, args, obs, act, total_step, equalizing_factor):
+    def step(self, args, obs, act, total_step, normalizer):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -127,10 +127,10 @@ class PredictEnv:
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
-        ensemble_lsde_model_means = ensemble_lsde_model_means / equalizing_factor
+        ensemble_lsde_model_means = normalizer.inverse_transform(ensemble_lsde_model_means)
         ensemble_lsde_model_means[:, :, :] += obs
 
-        ensemble_samples_bnn[:, :, :] = ensemble_samples_bnn[:, :, :] / equalizing_factor
+        ensemble_samples_bnn[:, :, :] = normalizer.inverse_transform(ensemble_samples_bnn)
         ensemble_samples_bnn[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_samples_bnn.shape
