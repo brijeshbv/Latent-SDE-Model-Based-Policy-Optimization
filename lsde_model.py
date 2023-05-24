@@ -147,7 +147,7 @@ class LatentSDE(nn.Module):
         # hyper-parameters
         kl_anneal_iters = 700
         lr_init = 1e-3
-        lr_gamma = 0.9992
+        lr_gamma = 0.9950
 
         # Encoder.
         self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size,
