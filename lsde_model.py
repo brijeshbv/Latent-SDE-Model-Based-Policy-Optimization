@@ -298,10 +298,10 @@ class LatentSDE(nn.Module):
 
     def loss(self, logqp_path, predicted_xs, xs_target):
         xs_dist = Normal(loc=predicted_xs, scale=self.noise_std)
-        log_pxs = xs_dist.log_prob(xs_target).sum(dim=(2)).mean(dim=1)
+        log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
         #* self.kl_scheduler.val
         loss_ensemble = -log_pxs + logqp_path
-        loss = loss_ensemble.mean(dim=0)
+        loss = loss_ensemble.sum(dim=0)
         if self.use_decay:
             loss += self.get_decay_loss()
         return loss, loss_ensemble
@@ -326,14 +326,12 @@ class LatentSDEModel:
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
-        self.mse_loss = torch.nn.MSELoss()
 
     @torch.no_grad()
     def ensemble_mse_loss(self, xs_pred, xs):
-        losses = torch.asarray([self.mse_loss(xs_pred[0], xs[0])])
-        for i in range(xs.shape[0] - 1):
-            losses = torch.cat((losses, torch.asarray([self.mse_loss(xs_pred[i + 1], xs[i + 1])])), dim=0)
-        return losses
+        assert len(xs_pred.shape) == len(xs.shape) == 3
+        mse_loss = torch.mean(torch.pow(xs_pred - xs, 2), dim=(1, 2))
+        return mse_loss
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = 50
@@ -422,24 +420,6 @@ class LatentSDEModel:
                     break
 
 
-    def batchify(self, data, batch_size):
-        no_batches, dim = data.shape
-        big_chunk = np.array([], dtype=np.float32)
-        flow_over = np.array([], dtype=np.float32)
-        for j in range(no_batches):
-            if j % batch_size == 0 and (j + batch_size) <= no_batches:
-                chunk = data[j:j + batch_size]
-                if j == 0:
-                    big_chunk = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-                else:
-                    big_chunk = np.append(big_chunk,
-                                          np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1])), axis=0)
-            elif j % batch_size == 0 and (j + batch_size) > no_batches:
-                chunk = data[j:j + batch_size]
-                flow_over = np.array(chunk).reshape((1, chunk.shape[0], chunk.shape[1]))
-
-        return torch.asarray(big_chunk, dtype=torch.float32).to(device), torch.asarray(flow_over,
-                                                                                       dtype=torch.float32).to(device)
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
