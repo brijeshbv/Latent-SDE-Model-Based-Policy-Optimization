@@ -274,7 +274,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
             total_step += 1
             if total_step % 100 == 0:
                 print(f'Steps taken: {total_step}\n')
-            if total_step % args.epoch_length == 0:
+            if total_step % 250 == 0:
                 '''
                 avg_reward_len = min(len(env_sampler.path_rewards), 5)
                 avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len

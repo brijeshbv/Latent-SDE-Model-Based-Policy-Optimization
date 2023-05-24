@@ -320,43 +320,43 @@ class Swish(nn.Module):
         return x
 
 
-def get_data(inputs_file_path, labels_file_path, num_examples):
-    with open(inputs_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
-        bytestream.read(16)
-        buf = bytestream.read(28 * 28 * num_examples)
-        data = np.frombuffer(buf, dtype=np.uint8) / 255.0
-        inputs = data.reshape(num_examples, 784)
+# def get_data(inputs_file_path, labels_file_path, num_examples):
+#     with open(inputs_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
+#         bytestream.read(16)
+#         buf = bytestream.read(28 * 28 * num_examples)
+#         data = np.frombuffer(buf, dtype=np.uint8) / 255.0
+#         inputs = data.reshape(num_examples, 784)
+#
+#     with open(labels_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
+#         bytestream.read(8)
+#         buf = bytestream.read(num_examples)
+#         labels = np.frombuffer(buf, dtype=np.uint8)
+#
+#     return np.array(inputs, dtype=np.float32), np.array(labels, dtype=np.int8)
 
-    with open(labels_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
-        bytestream.read(8)
-        buf = bytestream.read(num_examples)
-        labels = np.frombuffer(buf, dtype=np.uint8)
 
-    return np.array(inputs, dtype=np.float32), np.array(labels, dtype=np.int8)
-
-
-def set_tf_weights(model, tf_weights):
-    print(tf_weights.keys())
-    pth_weights = {}
-    pth_weights['max_logvar'] = tf_weights['BNN/max_log_var:0']
-    pth_weights['min_logvar'] = tf_weights['BNN/min_log_var:0']
-    pth_weights['nn1.weight'] = tf_weights['BNN/Layer0/FC_weights:0']
-    pth_weights['nn1.bias'] = tf_weights['BNN/Layer0/FC_biases:0']
-    pth_weights['nn2.weight'] = tf_weights['BNN/Layer1/FC_weights:0']
-    pth_weights['nn2.bias'] = tf_weights['BNN/Layer1/FC_biases:0']
-    pth_weights['nn3.weight'] = tf_weights['BNN/Layer2/FC_weights:0']
-    pth_weights['nn3.bias'] = tf_weights['BNN/Layer2/FC_biases:0']
-    pth_weights['nn4.weight'] = tf_weights['BNN/Layer3/FC_weights:0']
-    pth_weights['nn4.bias'] = tf_weights['BNN/Layer3/FC_biases:0']
-    pth_weights['nn5.weight'] = tf_weights['BNN/Layer4/FC_weights:0']
-    pth_weights['nn5.bias'] = tf_weights['BNN/Layer4/FC_biases:0']
-    for name, param in model.ensemble_model.named_parameters():
-        if param.requires_grad:
-            # print(name)
-            print(param.data.shape, pth_weights[name].shape)
-            param.data = torch.FloatTensor(pth_weights[name]).to(device).reshape(param.data.shape)
-            pth_weights[name] = param.data
-            print(name)
+# def set_tf_weights(model, tf_weights):
+#     print(tf_weights.keys())
+#     pth_weights = {}
+#     pth_weights['max_logvar'] = tf_weights['BNN/max_log_var:0']
+#     pth_weights['min_logvar'] = tf_weights['BNN/min_log_var:0']
+#     pth_weights['nn1.weight'] = tf_weights['BNN/Layer0/FC_weights:0']
+#     pth_weights['nn1.bias'] = tf_weights['BNN/Layer0/FC_biases:0']
+#     pth_weights['nn2.weight'] = tf_weights['BNN/Layer1/FC_weights:0']
+#     pth_weights['nn2.bias'] = tf_weights['BNN/Layer1/FC_biases:0']
+#     pth_weights['nn3.weight'] = tf_weights['BNN/Layer2/FC_weights:0']
+#     pth_weights['nn3.bias'] = tf_weights['BNN/Layer2/FC_biases:0']
+#     pth_weights['nn4.weight'] = tf_weights['BNN/Layer3/FC_weights:0']
+#     pth_weights['nn4.bias'] = tf_weights['BNN/Layer3/FC_biases:0']
+#     pth_weights['nn5.weight'] = tf_weights['BNN/Layer4/FC_weights:0']
+#     pth_weights['nn5.bias'] = tf_weights['BNN/Layer4/FC_biases:0']
+#     for name, param in model.ensemble_model.named_parameters():
+#         if param.requires_grad:
+#             # print(name)
+#             print(param.data.shape, pth_weights[name].shape)
+#             param.data = torch.FloatTensor(pth_weights[name]).to(device).reshape(param.data.shape)
+#             pth_weights[name] = param.data
+#             print(name)
 
 
 def main():
