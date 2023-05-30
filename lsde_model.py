@@ -1,5 +1,7 @@
 import fire
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from torch import nn
@@ -121,6 +123,8 @@ class EnsembleFC(nn.Module):
         return 'in_features={}, out_features={}, bias={}'.format(
             self.in_features, self.out_features, self.bias is not None
         )
+
+
 def init_weights(m):
     def truncated_normal_init(t, mean=0.0, std=0.01):
         torch.nn.init.normal_(t, mean=mean, std=std)
@@ -135,6 +139,7 @@ def init_weights(m):
         input_dim = m.in_features
         truncated_normal_init(m.weight, std=1 / (2 * np.sqrt(input_dim)))
         m.bias.data.fill_(0.0)
+
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
@@ -299,13 +304,12 @@ class LatentSDE(nn.Module):
     def loss(self, logqp_path, predicted_xs, xs_target):
         xs_dist = Normal(loc=predicted_xs, scale=self.noise_std)
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
-        #* self.kl_scheduler.val
+        # * self.kl_scheduler.val
         loss_ensemble = -log_pxs + logqp_path
         loss = loss_ensemble.mean(dim=0)
         if self.use_decay:
             loss += self.get_decay_loss()
         return loss, loss_ensemble
-
 
 
 class LatentSDEModel:
@@ -418,8 +422,6 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'early data training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-
-
 
     def _save_best(self, epoch, holdout_losses):
         updated = False
