@@ -9,7 +9,9 @@ import numpy as np
 import math
 import gzip
 import itertools
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

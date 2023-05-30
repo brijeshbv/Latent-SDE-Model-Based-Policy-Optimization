@@ -1,8 +1,8 @@
 import numpy
 import numpy as np
-import matplotlib.pyplot as plt
-
-
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 class PredictEnv:
     def __init__(self, model_lsde, env_name, model_type):
         self.model_lsde = model_lsde
@@ -135,6 +135,7 @@ class PredictEnv:
             terminals = terminals[0]
         # 'log_prob': log_prob, 'dev': dev
         info = {'mean': return_means, }
+        print('lsde is being used for predict')
         return next_obs, rewards, terminals, info
 
     def plt_predictions(self, X, fname='reconstructions.png'):
