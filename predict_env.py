@@ -2,31 +2,16 @@ import numpy
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 class PredictEnv:
-    def __init__(self, model_lsde, model_bnn, env_name, model_type):
+    def __init__(self, model_lsde, env_name, model_type):
         self.model_lsde = model_lsde
-        self.model_bnn = model_bnn
         self.env_name = env_name
         self.model_type = model_type
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
         if env_name == "Hopper-v4":
-            # healthy_state_range = (-100.0, 100.0),
-            # healthy_z_range = (0.7, float("inf")),
-            # healthy_angle_range = (-0.2, 0.2),
-            # assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
-            #
-            # height = next_obs[:, 1]
-            # angle = next_obs[:, 2]
-            # not_done = np.isfinite(next_obs).all(axis=-1) \
-            #            * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
-            #            * (height > .7) \
-            #            * (np.abs(angle) < .2)
-            #
-            # done = ~not_done
-            # done = done[:, None]
-
             z, angle = obs[:, 1], obs[:, 2]
             state = obs[:, 2:]
 
@@ -115,23 +100,16 @@ class PredictEnv:
         else:
             return_single = False
         batch_size = 512
-        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
-        inputs = np.concatenate((obs, act), axis=-1)
-        ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
+        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, batch_size,
+                                                            total_step).detach().cpu().numpy()
 
-        ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
-        ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
-            size=ensemble_model_means_bnn.shape) * ensemble_model_stds
         if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
+            self.plt_predictions(ensemble_lsde_model_means, fname=f'results/{args.resdir}/prediction_{total_step}')
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
         ensemble_lsde_model_means = normalizer.inverse_transform(ensemble_lsde_model_means)
         ensemble_lsde_model_means[:, :, :] += obs
-
-        ensemble_samples_bnn[:, :, :] = normalizer.inverse_transform(ensemble_samples_bnn)
-        ensemble_samples_bnn[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_lsde_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
@@ -159,7 +137,7 @@ class PredictEnv:
         info = {'mean': return_means, }
         return next_obs, rewards, terminals, info
 
-    def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
+    def plt_predictions(self, X, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[2]).astype(int)
         nrows = np.ceil(D).astype(int)
@@ -167,6 +145,5 @@ class PredictEnv:
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[0, -tt:, i], 'g.-')
-            plt.plot(range(0, tt), X_bnn[0, -tt:, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()
