@@ -65,7 +65,7 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=1000000, metavar='A',
                         help='rollout number M')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -256,7 +256,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
-                if total_step > 750:
+                if total_step > 250:
                     rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
@@ -302,6 +302,7 @@ def main(args=None):
         wandb.login()
         wandb.init(project='lsde-mbrl')
 
+
     # Initial environment
     if args.env_name == 'InvertedPendulum-v4':
         env = gym.make(args.env_name)
@@ -309,13 +310,17 @@ def main(args=None):
         env = gym.make(args.env_name,
                        exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
 
+
+
     # Set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     # env.seed(args.seed)
-
+    observation_space_shape_sac = env.observation_space.shape[0]
+    if args.env_name == "Hopper-v4" :
+        observation_space_shape_sac -= 1
     # Initial agent
-    agent = SAC(env.observation_space.shape[0], env.action_space, args)
+    agent = SAC(observation_space_shape_sac, env.action_space, args)
 
     # Initial ensemble model
     state_size = np.prod(env.observation_space.shape)
@@ -336,7 +341,7 @@ def main(args=None):
     # Initial pool for model
     rollouts_per_epoch = args.rollout_batch_size * args.epoch_length / args.model_train_freq
     #todo was 1.0
-    model_steps_per_epoch = int(0.5 * rollouts_per_epoch)
+    model_steps_per_epoch = int(1 * rollouts_per_epoch)
     new_pool_size = args.model_retain_epochs * model_steps_per_epoch
     model_pool = ReplayMemory(new_pool_size)
 
