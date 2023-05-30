@@ -144,12 +144,7 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     delta_state_label = normalizer.transform(delta_state_label)
     inputs = state
     print(f'training lsde model, {inputs.shape}')
-
     predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
-
-    inputs = np.concatenate((state, action), axis=-1)
-    print(f'training model, {inputs.shape}')
-    predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -332,12 +327,9 @@ def main(args=None):
     elif args.model_type == 'torchsde':
         env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size,
                                     args.pred_hidden_size)
-        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
-                                           args.pred_hidden_size,
-                                           use_decay=args.use_decay)
 
     # Predict environments
-    predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)
+    predict_env = PredictEnv(env_model1, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
