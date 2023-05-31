@@ -99,8 +99,8 @@ class PredictEnv:
             return_single = True
         else:
             return_single = False
-        batch_size = 512
-        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, batch_size,
+        steps_to_predict = 5
+        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, steps_to_predict,
                                                             total_step).detach().cpu().numpy()
 
         if total_step % 250 == 0:
