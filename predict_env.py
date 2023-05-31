@@ -126,8 +126,6 @@ class PredictEnv:
         if total_step % 250 == 0:
             self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
 
-        # no_batches = obs.shape[0] // batch_size
-        # obs = obs[:no_batches * batch_size, :]
         ensemble_lsde_model_means = normalizer.inverse_transform(ensemble_lsde_model_means)
         ensemble_lsde_model_means[:, :, :] += obs
 
@@ -135,17 +133,13 @@ class PredictEnv:
         ensemble_samples_bnn[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_lsde_model_means.shape
-        if self.model_type == 'pytorch' or self.model_type == 'torchsde':
-            model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
-        else:
-            model_idxes = self.model_lsde.random_inds(batch_size)
+        model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
+
         batch_idxes = np.arange(0, batch_size)
 
         samples = ensemble_lsde_model_means[model_idxes, batch_idxes]
         model_means = ensemble_lsde_model_means[model_idxes, batch_idxes]
 
-        # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
-        # todo to convert back to lsde, remove 1
         next_obs = samples[:, :]
         rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
@@ -156,7 +150,6 @@ class PredictEnv:
             return_means = return_means[0]
             rewards = rewards[0]
             terminals = terminals[0]
-        # 'log_prob': log_prob, 'dev': dev
         info = {'mean': return_means, }
         print('lsde is being used for predict')
         return next_obs, rewards, terminals, info

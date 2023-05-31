@@ -127,12 +127,6 @@ def set_rollout_length(args, epoch_step):
     return int(rollout_length)
 
 
-def get_equalizing_factor(delta_state):
-    equalizing_factor = np.sort(np.absolute(delta_state).mean(axis=0))[::-1]
-    equalizing_factor = equalizing_factor[2].repeat(equalizing_factor.shape[0]) / equalizing_factor
-    return equalizing_factor[::-1]
-
-
 def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
@@ -290,14 +284,10 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
                     sum_reward += reward
                     test_step += 1
-                # logger.record_tabular("total_step", total_step)
-                # logger.record_tabular("sum_reward", sum_reward)
-                # logger.dump_tabular()
                 if args.wandb != 'no':
                     wandb.log({'reward': sum_reward}, step=total_step)
                 print(f'Steps: {total_step} , reward: {sum_reward}\n')
                 logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
-                # print(total_step, sum_reward)
 
 
 def main(args=None):
@@ -348,7 +338,6 @@ def main(args=None):
     env_pool = ReplayMemory(args.replay_size)
     # Initial pool for model
     rollouts_per_epoch = args.rollout_batch_size * args.epoch_length / args.model_train_freq
-    #todo was 1.0
     model_steps_per_epoch = int(1 * rollouts_per_epoch)
     new_pool_size = args.model_retain_epochs * model_steps_per_epoch
     model_pool = ReplayMemory(new_pool_size)

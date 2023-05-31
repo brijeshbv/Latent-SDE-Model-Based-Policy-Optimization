@@ -145,7 +145,7 @@ class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, network_size, t0=0,
+    def __init__(self, data_size, latent_size, context_size, hidden_size, action_dim, network_size, t0=0,
                  skip_every=1,
                  t1=1, dt=0.5):
         super(LatentSDE, self).__init__()
@@ -162,7 +162,6 @@ class LatentSDE(nn.Module):
         self.t1 = t1
         self.dt = dt
         self.skip_every = skip_every
-        self.reward_size = reward_size
         self.latent_size = latent_size
         self.use_decay = True
         self.noise_std = 0.01  # Decoder.
@@ -313,7 +312,7 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=32,
+    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=64,
                  context_size=32):
         self._snapshots = None
         self._state = None
@@ -326,7 +325,7 @@ class LatentSDEModel:
         self.action_size = action_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size, context_size, hidden_size, action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -387,7 +386,6 @@ class LatentSDEModel:
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training lsde model, train_size : {train_inputs.shape}')
-        max_epoch = 30
         for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
@@ -416,7 +414,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1000 and epoch > 100:
+                elif total_step <= 1250 and epoch > 150:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
