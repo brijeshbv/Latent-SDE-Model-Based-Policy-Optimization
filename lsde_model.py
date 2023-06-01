@@ -164,7 +164,7 @@ class LatentSDE(nn.Module):
         self.skip_every = skip_every
         self.latent_size = latent_size
         self.use_decay = True
-        self.noise_std = 0.01  # Decoder.
+        self.noise_std = 0.07  # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Sigmoid(),
@@ -240,8 +240,6 @@ class LatentSDE(nn.Module):
             (no_networks, no_actions // no_batches, no_batches, action_dim))
         ts = torch.linspace(self.t0, self.t1, steps=xs.shape[1] + 1, device=device)
         ts = torch.permute(ts.repeat(xs.shape[1], 1).to(device), (1, 0))
-
-        ts_horizon = ts.permute((1, 0))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         for i in sampled_t:
             ctx = self.encoder(xs[:, i, :, :])
@@ -414,7 +412,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1250 and epoch > 150:
+                elif total_step <= 1250 and epoch > 50:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
