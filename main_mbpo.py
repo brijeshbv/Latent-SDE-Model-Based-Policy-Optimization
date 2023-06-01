@@ -94,7 +94,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=3000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -160,17 +160,18 @@ def resize_model_pool(args, rollout_length, model_pool):
 
 def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step):
     state, action, reward, next_state, done = env_pool.sample_all_batch(args.rollout_batch_size)
-    for i in range(rollout_length):
+
+    for i in range(1):
         # TODO: Get a batch of actions
-        action = agent.select_action(state)
-        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, normalizer)
+        #action = agent.select_action(state)
+        # next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, normalizer)
         # TODO: Push a batch of samples
-        model_pool.push_batch(
-            [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
-        nonterm_mask = ~terminals.squeeze(-1)
-        if nonterm_mask.sum() == 0:
-            break
-        state = next_states[nonterm_mask]
+        env_pool.push_batch(
+            [(state[j], action[j], reward[j], next_state[j], done[j]) for j in range(state.shape[0])])
+        # nonterm_mask = ~done.squeeze(-1)
+        # if nonterm_mask.sum() == 0:
+        #     break
+        # state = next_state[nonterm_mask]
 
 
 def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent):
@@ -248,15 +249,14 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
 
             if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
                 break
-            # if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-            #     train_predict_model(args, env_pool, predict_env, total_step)
-            #
-            #     new_rollout_length = set_rollout_length(args, epoch_step)
-            #     if rollout_length != new_rollout_length:
-            #         rollout_length = new_rollout_length
-            #         model_pool = resize_model_pool(args, rollout_length, model_pool)
-            #     if total_step > 250:
-            #         rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+            if cur_step > 0 and cur_step % args.model_train_freq == 0:
+                # train_predict_model(args, env_pool, predict_env, total_step)
+
+                new_rollout_length = set_rollout_length(args, epoch_step)
+                if rollout_length != new_rollout_length:
+                    rollout_length = new_rollout_length
+                    model_pool = resize_model_pool(args, rollout_length, model_pool)
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)
