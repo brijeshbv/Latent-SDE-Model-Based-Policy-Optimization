@@ -83,7 +83,7 @@ def readParser():
     # todo was 1000
     parser.add_argument('--min_pool_size', type=int, default=1000, metavar='A',
                         help='minimum pool size')
-    parser.add_argument('--real_ratio', type=float, default=0.05, metavar='A',
+    parser.add_argument('--real_ratio', type=float, default=1, metavar='A',
                         help='ratio of env samples / model samples')
     parser.add_argument('--train_every_n_steps', type=int, default=1, metavar='A',
                         help='frequency of training policy')
@@ -248,15 +248,15 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
 
             if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
                 break
-            if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env, total_step)
-
-                new_rollout_length = set_rollout_length(args, epoch_step)
-                if rollout_length != new_rollout_length:
-                    rollout_length = new_rollout_length
-                    model_pool = resize_model_pool(args, rollout_length, model_pool)
-                if total_step > 250:
-                    rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+            # if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
+            #     train_predict_model(args, env_pool, predict_env, total_step)
+            #
+            #     new_rollout_length = set_rollout_length(args, epoch_step)
+            #     if rollout_length != new_rollout_length:
+            #         rollout_length = new_rollout_length
+            #         model_pool = resize_model_pool(args, rollout_length, model_pool)
+            #     if total_step > 250:
+            #         rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)
