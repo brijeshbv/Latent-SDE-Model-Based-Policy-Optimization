@@ -141,9 +141,9 @@ def train_predict_model(args, env_pool, predict_env, total_step):
 
     predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
-    inputs = np.concatenate((state, action), axis=-1)
-    print(f'training model, {inputs.shape}')
-    predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
+    # inputs = np.concatenate((state, action), axis=-1)
+    # print(f'training model, {inputs.shape}')
+    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -255,8 +255,8 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                 if rollout_length != new_rollout_length:
                     rollout_length = new_rollout_length
                     model_pool = resize_model_pool(args, rollout_length, model_pool)
-                if total_step > 250:
-                    rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
             env_pool.push(cur_state, action, reward, next_state, done)

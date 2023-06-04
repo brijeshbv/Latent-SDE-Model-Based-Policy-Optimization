@@ -164,7 +164,7 @@ class LatentSDE(nn.Module):
         self.skip_every = skip_every
         self.latent_size = latent_size
         self.use_decay = True
-        self.noise_std = 0.07  # Decoder.
+        self.noise_std = 0.7  # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Sigmoid(),
@@ -310,7 +310,7 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=64,
+    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=32,
                  context_size=32):
         self._snapshots = None
         self._state = None
@@ -323,7 +323,7 @@ class LatentSDEModel:
         self.action_size = action_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size // 2 , context_size, hidden_size, action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -412,7 +412,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1250 and epoch > 50:
+                elif total_step <= 1250 and epoch > 100:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')

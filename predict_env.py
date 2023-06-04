@@ -106,6 +106,38 @@ class PredictEnv:
             reward = reward - cost
         elif env == "InvertedPendulum-v4":
             return numpy.ones_like(curr_pos[:, 0])
+        elif env == "LunarLander-v2":
+            reward = numpy.zeros_like(curr_pos[:, 0])
+            prev_shaping = (
+                    -100 * np.sqrt(curr_pos[:,0] * curr_pos[:,0] + curr_pos[:,1] * curr_pos[:,1])
+                    - 100 * np.sqrt(curr_pos[:,2] * curr_pos[:,2] + curr_pos[:,3] * curr_pos[:,3])
+                    - 100 * abs(curr_pos[:,4])
+                    + 10 * curr_pos[:,6]
+                    + 10 * curr_pos[:,7]
+            )
+            shaping = (
+                    -100 * np.sqrt(next_pos[:, 0] * next_pos[:, 0] + next_pos[:, 1] * next_pos[:, 1])
+                    - 100 * np.sqrt(next_pos[:, 2] * next_pos[:, 2] + next_pos[:, 3] * next_pos[:, 3])
+                    - 100 * abs(next_pos[:, 4])
+                    + 10 * next_pos[:, 6]
+                    + 10 * next_pos[:, 7]
+            )
+
+            if prev_shaping is not None:
+                reward = shaping - prev_shaping
+            m_power = (np.clip(action[:, 0], 0.0, 1.0) + 1.0) * 0.5  # 0.5..1.0
+            assert 0.5 <= m_power <= 1.0
+            s_power = np.clip(np.abs(action[:, 1]), 0.5, 1.0)
+            assert s_power >= 0.5 and s_power <= 1.0
+            reward -= (
+                    m_power * 0.30
+            )  # less fuel spent is better, about -30 for heuristic landing
+            reward -= s_power * 0.03
+
+            if self.game_over or abs(next_pos[0]) >= 1.0:
+                reward = -100
+            if not self.lander.awake:
+                reward = +100
         return reward
 
     def step(self, args, obs, act, total_step, normalizer):
@@ -117,20 +149,20 @@ class PredictEnv:
             return_single = False
         batch_size = 512
         ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, batch_size, total_step).detach().cpu().numpy()
-        inputs = np.concatenate((obs, act), axis=-1)
-        ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
+        # inputs = np.concatenate((obs, act), axis=-1)
+        # ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
 
-        ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
-        ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
-            size=ensemble_model_means_bnn.shape) * ensemble_model_stds
-        if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
+        # ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
+        # ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
+        #     size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+        # if total_step % 250 == 0:
+        #     self.plt_predictions(ensemble_lsde_model_means, ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
 
         ensemble_lsde_model_means = normalizer.inverse_transform(ensemble_lsde_model_means)
         ensemble_lsde_model_means[:, :, :] += obs
 
-        ensemble_samples_bnn[:, :, :] = normalizer.inverse_transform(ensemble_samples_bnn)
-        ensemble_samples_bnn[:, :, :] += obs
+        # ensemble_samples_bnn[:, :, :] = normalizer.inverse_transform(ensemble_samples_bnn)
+        # ensemble_samples_bnn[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_lsde_model_means.shape
         model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
