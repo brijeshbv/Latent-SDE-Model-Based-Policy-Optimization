@@ -4,14 +4,30 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 class PredictEnv:
-    def __init__(self, model_lsde, env_name, model_type):
+    def __init__(self, model_lsde, model_bnn, env_name, model_type):
         self.model_lsde = model_lsde
+        self.model_bnn = model_bnn
         self.env_name = env_name
         self.model_type = model_type
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
         if env_name == "Hopper-v4":
+            # healthy_state_range = (-100.0, 100.0),
+            # healthy_z_range = (0.7, float("inf")),
+            # healthy_angle_range = (-0.2, 0.2),
+            # assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+            #
+            # height = next_obs[:, 1]
+            # angle = next_obs[:, 2]
+            # not_done = np.isfinite(next_obs).all(axis=-1) \
+            #            * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
+            #            * (height > .7) \
+            #            * (np.abs(angle) < .2)
+            #
+            # done = ~not_done
+            # done = done[:, None]
+
             z, angle = obs[:, 1], obs[:, 2]
             state = obs[:, 2:]
 
@@ -90,6 +106,38 @@ class PredictEnv:
             reward = reward - cost
         elif env == "InvertedPendulum-v4":
             return numpy.ones_like(curr_pos[:, 0])
+        elif env == "LunarLander-v2":
+            reward = numpy.zeros_like(curr_pos[:, 0])
+            prev_shaping = (
+                    -100 * np.sqrt(curr_pos[:,0] * curr_pos[:,0] + curr_pos[:,1] * curr_pos[:,1])
+                    - 100 * np.sqrt(curr_pos[:,2] * curr_pos[:,2] + curr_pos[:,3] * curr_pos[:,3])
+                    - 100 * abs(curr_pos[:,4])
+                    + 10 * curr_pos[:,6]
+                    + 10 * curr_pos[:,7]
+            )
+            shaping = (
+                    -100 * np.sqrt(next_pos[:, 0] * next_pos[:, 0] + next_pos[:, 1] * next_pos[:, 1])
+                    - 100 * np.sqrt(next_pos[:, 2] * next_pos[:, 2] + next_pos[:, 3] * next_pos[:, 3])
+                    - 100 * abs(next_pos[:, 4])
+                    + 10 * next_pos[:, 6]
+                    + 10 * next_pos[:, 7]
+            )
+
+            if prev_shaping is not None:
+                reward = shaping - prev_shaping
+            m_power = (np.clip(action[:, 0], 0.0, 1.0) + 1.0) * 0.5  # 0.5..1.0
+            assert 0.5 <= m_power <= 1.0
+            s_power = np.clip(np.abs(action[:, 1]), 0.5, 1.0)
+            assert s_power >= 0.5 and s_power <= 1.0
+            reward -= (
+                    m_power * 0.30
+            )  # less fuel spent is better, about -30 for heuristic landing
+            reward -= s_power * 0.03
+
+            if self.game_over or abs(next_pos[0]) >= 1.0:
+                reward = -100
+            if not self.lander.awake:
+                reward = +100
         return reward
 
     def step(self, args, obs, act, total_step, normalizer):
@@ -132,12 +180,11 @@ class PredictEnv:
             return_means = return_means[0]
             rewards = rewards[0]
             terminals = terminals[0]
-        # 'log_prob': log_prob, 'dev': dev
         info = {'mean': return_means, }
         print('lsde is being used for predict')
         return next_obs, rewards, terminals, info
 
-    def plt_predictions(self, X, fname='reconstructions.png'):
+    def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[2]).astype(int)
         nrows = np.ceil(D).astype(int)
@@ -145,5 +192,6 @@ class PredictEnv:
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[0, -tt:, i], 'g.-')
+            plt.plot(range(0, tt), X_bnn[0, -tt:, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()

@@ -47,7 +47,7 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=1, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=5, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=3, metavar='E',
                         help='elite size (default: 5)')
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=500, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=3000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -129,12 +129,6 @@ def set_rollout_length(args, epoch_step):
     return int(rollout_length)
 
 
-def get_equalizing_factor(delta_state):
-    equalizing_factor = np.sort(np.absolute(delta_state).mean(axis=0))[::-1]
-    equalizing_factor = equalizing_factor[2].repeat(equalizing_factor.shape[0]) / equalizing_factor
-    return equalizing_factor[::-1]
-
-
 def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
@@ -146,7 +140,12 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     delta_state_label = normalizer.transform(delta_state_label)
     inputs = state
     print(f'training lsde model, {inputs.shape}')
+
     predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+
+    # inputs = np.concatenate((state, action), axis=-1)
+    # print(f'training model, {inputs.shape}')
+    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -287,14 +286,10 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
                     sum_reward += reward
                     test_step += 1
-                # logger.record_tabular("total_step", total_step)
-                # logger.record_tabular("sum_reward", sum_reward)
-                # logger.dump_tabular()
                 if args.wandb != 'no':
                     wandb.log({'reward': sum_reward}, step=total_step)
                 print(f'Steps: {total_step} , reward: {sum_reward}\n')
                 logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
-                # print(total_step, sum_reward)
 
 
 def main(args=None):
@@ -332,17 +327,19 @@ def main(args=None):
                                           args.pred_hidden_size,
                                           use_decay=args.use_decay)
     elif args.model_type == 'torchsde':
-        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size,agent,
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size,
                                     args.pred_hidden_size)
+        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+                                           args.pred_hidden_size,
+                                           use_decay=args.use_decay)
 
     # Predict environments
-    predict_env = PredictEnv(env_model1, args.env_name, args.model_type)
+    predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
     # Initial pool for model
     rollouts_per_epoch = args.rollout_batch_size * args.epoch_length / args.model_train_freq
-    #todo was 1.0
     model_steps_per_epoch = int(1 * rollouts_per_epoch)
     new_pool_size = args.model_retain_epochs * model_steps_per_epoch
     model_pool = ReplayMemory(new_pool_size)
