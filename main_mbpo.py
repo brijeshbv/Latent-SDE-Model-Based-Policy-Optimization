@@ -327,7 +327,7 @@ def main(args=None):
                                           args.pred_hidden_size,
                                           use_decay=args.use_decay)
     elif args.model_type == 'torchsde':
-        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size,
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, agent,
                                     args.pred_hidden_size)
         env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
                                            args.pred_hidden_size,
