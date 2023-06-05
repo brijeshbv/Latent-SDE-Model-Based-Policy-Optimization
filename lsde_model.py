@@ -292,7 +292,7 @@ class LatentSDE(nn.Module):
 
         logqp_path = cum_log_ratio.mean(dim=2).sum(dim=1) + logqp0_cum.sum(dim=1)
 
-        return logqp_path, predicted_xs
+        return logqp_path, torch.FloatTensor(predicted_xs)
 
     def opt_loss(self, loss):
         self.optimizer.zero_grad()
@@ -314,7 +314,7 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, agent , hidden_size=32,
+    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=32,
                  context_size=32):
         self.agent = agent
         self._snapshots = None
@@ -328,7 +328,7 @@ class LatentSDEModel:
         self.action_size = action_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, 1, context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size , 1, context_size, hidden_size, action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -418,7 +418,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1000 and epoch > 10:
+                elif total_step <= 1000 and epoch > 100:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
@@ -447,26 +447,30 @@ class LatentSDEModel:
             return False
 
     @torch.no_grad()
-    def predict(self, args, inputs, actions, steps_to_predict, total_step=0):
+    def predict(self, args, inputs, actions, steps_to_predict, total_step, normalizer):
         assert len(inputs) > 0, f'predict input is empty'
-        inputs = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32).repeat(
+        inputs = torch.asarray(inputs, dtype=torch.float32).repeat(
             [self.network_size, 1, 1]).to(device)
-        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).repeat(
+        actions = torch.asarray(actions, dtype=torch.float32).repeat(
             [self.network_size, 1, 1]).to(device)
+        inputs_norm = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32)
+        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32)
         num_nets, og_batches, og_dim = inputs.shape
-        print(f'predicting {inputs.shape} samples')
-        model_op = torch.empty((0,inputs.shape[0], inputs.shape[1], inputs.shape[2]), dtype=torch.float32)
+        print(f'predicting {inputs.shape} x {steps_to_predict} samples')
+        model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]), dtype=torch.float32)
         for i in range(steps_to_predict):
-            _, step_op = self.ensemble_model(inputs, actions)
+            _, step_op = self.ensemble_model(inputs_norm, actions)
+            step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
+            step_op = np.add(step_op, inputs)
             inputs = step_op
-            inputs = self.state_scaler.transform(inputs).reshape((inputs.shape[0] * inputs.shape[1], -1))
+            inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32).to(device)
             actions = torch.asarray(self.action_scaler.transform(self.agent.select_action(inputs)))
+            inputs = inputs.reshape((num_nets, og_batches, -1))
+            inputs_norm = torch.asarray(self.state_scaler.transform(inputs),
+                                        dtype=torch.float32)
             actions = actions.reshape((num_nets, og_batches, -1))
-            print("here: ",actions.shape)
-            model_op = torch.cat((model_op, step_op.reshape(1,step_op.shape[0], step_op.shape[1], step_op.shape[2])), dim=0)
-            print("here: ", model_op.shape)
-
-
-        assert not torch.isnan(model_op).any(), f'some predicted state vector was nan, halting progress'
-        assert model_op.shape[1] == og_batches, f'some predictions were lost, {model_op.shape[1]}, {og_batches}'
+            model_op = np.concatenate((model_op, step_op.reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
+                                 axis=0)
+        num_steps, ensemb, batch, dim = model_op.shape
+        model_op = model_op.reshape((ensemb, num_steps * batch, dim))
         return model_op

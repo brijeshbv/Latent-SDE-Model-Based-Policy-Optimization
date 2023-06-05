@@ -99,17 +99,16 @@ class PredictEnv:
             return_single = True
         else:
             return_single = False
-        steps_to_predict = 5
-        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, steps_to_predict,
-                                                            total_step).detach().cpu().numpy()
+
+        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
+                                                            total_step, normalizer)
 
         if total_step % 250 == 0:
             self.plt_predictions(ensemble_lsde_model_means, fname=f'results/{args.resdir}/prediction_{total_step}')
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
-        ensemble_lsde_model_means = normalizer.inverse_transform(ensemble_lsde_model_means)
-        ensemble_lsde_model_means[:, :, :] += obs
+        #ensemble_lsde_model_means[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_lsde_model_means.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
