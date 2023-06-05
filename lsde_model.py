@@ -1,5 +1,6 @@
 import fire
 import matplotlib
+
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import numpy as np
@@ -288,7 +289,7 @@ class LatentSDE(nn.Module):
 
         logqp_path = cum_log_ratio.mean(dim=2).sum(dim=1) + logqp0_cum.sum(dim=1)
 
-        return logqp_path, torch.FloatTensor(predicted_xs)
+        return logqp_path, predicted_xs
 
     def opt_loss(self, loss):
         self.optimizer.zero_grad()
@@ -324,7 +325,7 @@ class LatentSDEModel:
         self.action_size = action_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size // 2 , context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size // 2, context_size, hidden_size, action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -446,27 +447,44 @@ class LatentSDEModel:
     def predict(self, args, inputs, actions, steps_to_predict, total_step, normalizer):
         assert len(inputs) > 0, f'predict input is empty'
         inputs = torch.asarray(inputs, dtype=torch.float32).repeat(
-            [self.network_size, 1, 1]).to(device)
+            [self.network_size, 1, 1])
         actions = torch.asarray(actions, dtype=torch.float32).repeat(
-            [self.network_size, 1, 1]).to(device)
-        inputs_norm = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32)
-        actions = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32)
+            [self.network_size, 1, 1])
+        inputs_norm = torch.asarray(self.state_scaler.transform(inputs), dtype=torch.float32).to(device)
+        actions_norm = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).to(device)
         num_nets, og_batches, og_dim = inputs.shape
         print(f'predicting {inputs.shape} x {steps_to_predict} samples')
-        model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]), dtype=torch.float32)
+        model_actions = actions.reshape((1, actions.shape[0], actions.shape[1], actions.shape[2]))
+        model_ip = inputs.reshape((1, inputs.shape[0], inputs.shape[1], inputs.shape[2]))
+        model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
+                               dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
-            _, step_op = self.ensemble_model(inputs_norm, actions)
+            _, step_op = self.ensemble_model(inputs_norm, actions_norm)
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
-            step_op = np.add(step_op, inputs)
+            step_op = np.add(step_op, inputs.detach().cpu())
             inputs = step_op
-            inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32).to(device)
-            actions = torch.asarray(self.action_scaler.transform(self.agent.select_action(inputs)))
+            inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32)
+            actions = self.agent.select_action(inputs.detach().cpu())
+            actions_norm = torch.asarray(self.action_scaler.transform(actions))
             inputs = inputs.reshape((num_nets, og_batches, -1))
-            inputs_norm = torch.asarray(self.state_scaler.transform(inputs),
-                                        dtype=torch.float32)
+            inputs_norm = torch.asarray(self.state_scaler.transform(inputs.detach().cpu()),
+                                        dtype=torch.float32).to(device)
+            actions_norm = actions_norm.reshape((num_nets, og_batches, -1)).to(device)
             actions = actions.reshape((num_nets, og_batches, -1))
-            model_op = np.concatenate((model_op, step_op.reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
-                                 axis=0)
+            model_op = np.concatenate(
+                (model_op, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
+                axis=0)
+            if i < steps_to_predict - 1:
+                model_ip = np.concatenate(
+                    (model_ip, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
+                    axis=0)
+                model_actions = np.concatenate(
+                    (model_actions, actions.reshape(1, actions.shape[0], actions.shape[1], actions.shape[2])),
+                    axis=0)
+
         num_steps, ensemb, batch, dim = model_op.shape
         model_op = model_op.reshape((ensemb, num_steps * batch, dim))
-        return model_op
+        model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
+        num_steps, ensemb, batch, dim = model_actions.shape
+        model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
+        return model_op, model_ip, model_actions
