@@ -184,7 +184,7 @@ class PredictEnv:
         print('lsde is being used for predict')
         return next_obs, rewards, terminals, info
 
-    def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
+    def plt_predictions(self, X, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[2]).astype(int)
         nrows = np.ceil(D).astype(int)
@@ -192,6 +192,5 @@ class PredictEnv:
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[0, -tt:, i], 'g.-')
-            plt.plot(range(0, tt), X_bnn[0, -tt:, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()
