@@ -148,7 +148,7 @@ class PredictEnv:
         else:
             return_single = False
 
-        ensemble_lsde_model_means = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
+        ensemble_lsde_model_means, ensemble_model_input, ensemble_model_actions = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
                                                             total_step, normalizer)
 
         if total_step % 250 == 0:
@@ -166,6 +166,8 @@ class PredictEnv:
         batch_idxes = np.arange(0, batch_size)
 
         samples = ensemble_lsde_model_means[model_idxes, batch_idxes]
+        obs = ensemble_model_input[model_idxes, batch_idxes]
+        act = ensemble_model_actions[model_idxes, batch_idxes]
         model_means = ensemble_lsde_model_means[model_idxes, batch_idxes]
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
