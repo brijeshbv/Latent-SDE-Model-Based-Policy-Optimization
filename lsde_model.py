@@ -182,15 +182,12 @@ class LatentSDE(nn.Module):
         )
 
         # This needs to be an element-wise function for the SDE to satisfy diagonal noise.
-        self.g_nets = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(1, hidden_size),
-                    nn.Sigmoid(),
-                    nn.Linear(hidden_size, 1),
-                )
-                for _ in range(latent_size)
-            ]
+        self.g_nets = nn.Sequential(
+            nn.Linear(latent_size, hidden_size),
+            nn.Sigmoid(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Sigmoid(),
+            nn.Linear(hidden_size, latent_size),
         )
 
         self.projector = nn.Sequential(
@@ -220,10 +217,8 @@ class LatentSDE(nn.Module):
         return out
 
     def g(self, t, y):  # Diagonal diffusion.
-        y = torch.split(y, split_size_or_sections=1, dim=1)
-        out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
-        return torch.cat(out, dim=1)
-
+        out = self.g_nets(y)
+        return out
     def get_decay_loss(self):
         decay_loss = 0.
         for m in self.children():
