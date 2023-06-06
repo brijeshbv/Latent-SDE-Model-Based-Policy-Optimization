@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=200000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=1000000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=5, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=10, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -137,15 +137,15 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     if normalizer is None:
         normalizer = StandardScaler()
         normalizer.fit(delta_state_label)
-    delta_state_label = normalizer.transform(delta_state_label)
-    inputs = state
-    print(f'training lsde model, {inputs.shape}')
+    #delta_state_label = normalizer.transform(delta_state_label)
+    # inputs = state
+    # print(f'training lsde model, {inputs.shape}')
 
-    predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+    # predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
-    # inputs = np.concatenate((state, action), axis=-1)
-    # print(f'training model, {inputs.shape}')
-    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
+    inputs = np.concatenate((state, action), axis=-1)
+    print(f'training model, {inputs.shape}')
+    predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):

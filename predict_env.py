@@ -147,28 +147,33 @@ class PredictEnv:
             return_single = True
         else:
             return_single = False
+        inputs = np.concatenate((obs, act), axis=-1)
+        ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
 
-        ensemble_lsde_model_means, ensemble_model_input, ensemble_model_actions = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
-                                                            total_step, normalizer)
+        ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
+        ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
+            size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+        # ensemble_lsde_model_means, ensemble_model_input, ensemble_model_actions = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
+        #                                                     total_step, normalizer)
 
-        if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_means, fname=f'results/{args.resdir}/prediction_{total_step}')
+        # if total_step % 250 == 0:
+        #     self.plt_predictions(ensemble_lsde_model_means, fname=f'results/{args.resdir}/prediction_{total_step}')
 
         # no_batches = obs.shape[0] // batch_size
         # obs = obs[:no_batches * batch_size, :]
-        #ensemble_lsde_model_means[:, :, :] += obs
+        ensemble_samples_bnn[:, :, :] += obs
 
-        num_models, batch_size, _ = ensemble_lsde_model_means.shape
+        num_models, batch_size, _ = ensemble_samples_bnn.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
-            model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
+            model_idxes = np.random.choice(self.model_bnn.elite_model_idxes, size=batch_size)
         else:
-            model_idxes = self.model_lsde.random_inds(batch_size)
+            model_idxes = self.model_bnn.random_inds(batch_size)
         batch_idxes = np.arange(0, batch_size)
 
-        samples = ensemble_lsde_model_means[model_idxes, batch_idxes]
-        obs = ensemble_model_input[model_idxes, batch_idxes]
-        act = ensemble_model_actions[model_idxes, batch_idxes]
-        model_means = ensemble_lsde_model_means[model_idxes, batch_idxes]
+        samples = ensemble_samples_bnn[model_idxes, batch_idxes]
+        # obs = ensemble_model_input[model_idxes, batch_idxes]
+        # act = ensemble_model_actions[model_idxes, batch_idxes]
+        model_means = ensemble_samples_bnn[model_idxes, batch_idxes]
 
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
