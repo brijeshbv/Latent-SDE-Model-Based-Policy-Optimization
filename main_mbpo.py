@@ -289,7 +289,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     test_step += 1
                 if args.wandb != 'no':
                     wandb.log({'reward': sum_reward}, step=total_step)
-                print(f'Steps: {total_step} , reward: {sum_reward}\n')
+                print(f'Steps: {total_step} path_length: {test_step} , reward: {sum_reward}\n')
                 logging.info(f'Steps: {total_step}  path_length: {test_step}, reward: {sum_reward}\n')
 
 
