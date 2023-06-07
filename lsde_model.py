@@ -14,6 +14,7 @@ import itertools
 import tqdm
 import wandb
 import math
+import torch.nn.functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -141,6 +142,27 @@ def init_weights(m):
         truncated_normal_init(m.weight, std=1 / (2 * np.sqrt(input_dim)))
         m.bias.data.fill_(0.0)
 
+class Projector(nn.Module):
+
+    def __init__(self, data_size, latent_size, hidden_size, network_size):
+        super(Projector, self).__init__()
+        self.data_size = data_size
+        self.lin = nn.Sequential(
+            EnsembleFC(latent_size, hidden_size, network_size),
+            nn.Sigmoid(),
+            EnsembleFC(hidden_size, hidden_size, network_size),
+            nn.Sigmoid(),
+            EnsembleFC(hidden_size, data_size + data_size, network_size)
+        )
+        self.max_logvar = nn.Parameter((torch.ones((1, self.data_size)).float() / 2).to(device), requires_grad=False)
+        self.min_logvar = nn.Parameter((-torch.ones((1, self.data_size)).float() * 10).to(device), requires_grad=False)
+
+    def forward(self, inp):
+        out = self.lin(inp)
+        mean = out[:, :, :self.data_size]
+        logvar = self.max_logvar - F.softplus(self.max_logvar - out[:, :, self.data_size:])
+        logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
+        return mean, logvar
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
@@ -182,21 +204,18 @@ class LatentSDE(nn.Module):
         )
 
         # This needs to be an element-wise function for the SDE to satisfy diagonal noise.
-        self.g_nets = nn.Sequential(
-            nn.Linear(latent_size, hidden_size),
-            nn.Sigmoid(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Sigmoid(),
-            nn.Linear(hidden_size, latent_size),
+        self.g_nets = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(1, hidden_size),
+                    nn.Sigmoid(),
+                    nn.Linear(hidden_size, 1),
+                )
+                for _ in range(latent_size)
+            ]
         )
 
-        self.projector = nn.Sequential(
-            EnsembleFC(latent_size, hidden_size, network_size),
-            nn.Sigmoid(),
-            EnsembleFC(hidden_size, hidden_size, network_size),
-            nn.Sigmoid(),
-            EnsembleFC(hidden_size, data_size, network_size)
-        )
+        self.projector = Projector(data_size, latent_size, hidden_size, network_size)
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
             EnsembleFC(latent_and_action_size, latent_size, network_size))
@@ -217,8 +236,10 @@ class LatentSDE(nn.Module):
         return out
 
     def g(self, t, y):  # Diagonal diffusion.
-        out = self.g_nets(y)
-        return out
+        y = torch.split(y, split_size_or_sections=1, dim=1)
+        out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
+        return torch.cat(out, dim=1)
+
     def get_decay_loss(self):
         decay_loss = 0.
         for m in self.children():
@@ -263,11 +284,14 @@ class LatentSDE(nn.Module):
                 zs = z_pred[-1:].reshape((no_networks, 1, no_batches, -1))
             else:
                 zs = torch.cat((zs, z_pred[-1:].reshape((no_networks, 1, no_batches, -1))), dim=1)
-            xs_mean = self.projector(zs[:, -1, :, :])
+            xs_mean, xs_std = self.projector(zs[:, -1, :, :])
             if i == 0:
-                predicted_xs = xs_mean
+                predicted_xs_mean = xs_mean
+                predicted_xs_std = xs_std
             else:
-                predicted_xs = torch.cat((predicted_xs, xs_mean),
+                predicted_xs_mean = torch.cat((predicted_xs_mean, xs_mean),
+                                         dim=1)
+                predicted_xs_std = torch.cat((predicted_xs_std, xs_std),
                                          dim=1)
 
             qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
@@ -284,7 +308,7 @@ class LatentSDE(nn.Module):
 
         logqp_path = cum_log_ratio.mean(dim=2).sum(dim=1) + logqp0_cum.sum(dim=1)
 
-        return logqp_path, predicted_xs
+        return logqp_path, predicted_xs_mean, predicted_xs_std
 
     def opt_loss(self, loss):
         self.optimizer.zero_grad()
@@ -294,8 +318,8 @@ class LatentSDE(nn.Module):
         self.scheduler.step()
         self.kl_scheduler.step()
 
-    def loss(self, logqp_path, predicted_xs, xs_target):
-        xs_dist = Normal(loc=predicted_xs, scale=self.noise_std)
+    def loss(self, logqp_path, predicted_xs_mean, predicted_xs_std, xs_target):
+        xs_dist = Normal(loc=predicted_xs_mean, scale=torch.abs(predicted_xs_std))
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
         # * self.kl_scheduler.val
         loss_ensemble = -log_pxs + logqp_path
@@ -390,14 +414,15 @@ class LatentSDEModel:
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
-                logqp_path, predicted_xs = self.ensemble_model(train_input, train_action_input)
-                loss, _ = self.ensemble_model.loss(logqp_path, predicted_xs, train_label)
+                logqp_path, predicted_xs_mean, predicted_xs_std = self.ensemble_model(train_input, train_action_input)
+                loss, _ = self.ensemble_model.loss(logqp_path, predicted_xs_mean, predicted_xs_std, train_label)
                 self.ensemble_model.opt_loss(loss)
                 losses.append(loss)
 
             with torch.no_grad():
 
-                ho_logqp_path, xs_pred = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
+                ho_logqp_path, xs_pred, xs_std = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
+                xs_pred = xs_pred + (xs_std.exp() * torch.randn_like(xs_pred))
                 holdout_mse_loss = self.ensemble_mse_loss(xs_pred, holdout_labels)
                 holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
 
@@ -454,7 +479,8 @@ class LatentSDEModel:
         model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
                                dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
-            _, step_op = self.ensemble_model(inputs_norm, actions_norm)
+            _, step_op_mean, step_op_std = self.ensemble_model(inputs_norm, actions_norm)
+            step_op = step_op_mean + (step_op_std.exp() * torch.randn_like(step_op_mean)  )
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
             step_op = np.add(step_op, inputs.detach().cpu())
             inputs = step_op

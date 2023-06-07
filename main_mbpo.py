@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=200000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=500000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=5, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=2, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -289,7 +289,7 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                     test_step += 1
                 if args.wandb != 'no':
                     wandb.log({'reward': sum_reward}, step=total_step)
-                print(f'Steps: {total_step} , reward: {sum_reward}\n')
+                print(f'Steps: {total_step}, path_len: {test_step} , reward: {sum_reward}\n')
                 logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
 
 
