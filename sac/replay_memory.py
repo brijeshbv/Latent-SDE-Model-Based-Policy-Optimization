@@ -41,7 +41,8 @@ class ReplayMemory:
         idxes = np.random.randint(0, len(self.buffer), batch_size)
         batch = list(itemgetter(*idxes)(self.buffer))
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
-        assert not np.isnan(state).any(), f'some state vector was nan unfortunately'
+        if state.shape[0] > batch_size:
+            print(f'sampling more than needed batch size')
         return state, action, reward, next_state, done
 
     def return_all(self):

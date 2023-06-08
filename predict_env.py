@@ -143,6 +143,10 @@ class PredictEnv:
         return reward
 
     def step(self, args, obs, act, total_step, normalizer):
+        if obs.shape[0] > args.rollout_batch_size:
+            obs = obs[:args.rollout_batch_size]
+            act = act[:args.rollout_batch_size]
+            print(f'more obs than batch size, {obs.shape[0]}, batch_size : {args.rollout_batch_size}')
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]

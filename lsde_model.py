@@ -405,7 +405,6 @@ class LatentSDEModel:
         holdout_actions_inputs = holdout_actions_inputs[None, :, :].repeat([self.network_size, 1, 1])
         batch_size = train_inputs.shape[0]
         print(f'training lsde model, train_size : {train_inputs.shape}')
-        max_epoch = 30
         for epoch in itertools.count():
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
             for start_pos in range(0, train_inputs.shape[0], batch_size):
@@ -480,7 +479,7 @@ class LatentSDEModel:
                                dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
             _, step_op_mean, step_op_std = self.ensemble_model(inputs_norm, actions_norm)
-            step_op = step_op_mean + (step_op_std.exp() * torch.randn_like(step_op_mean)  )
+            step_op = step_op_mean + (step_op_std.exp() * torch.randn_like(step_op_mean))
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
             step_op = np.add(step_op, inputs.detach().cpu())
             inputs = step_op

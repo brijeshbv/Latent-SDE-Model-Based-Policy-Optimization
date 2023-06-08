@@ -93,7 +93,7 @@ def readParser():
                         help='times to training policy per step')
     parser.add_argument('--max_train_repeat_per_step', type=int, default=5, metavar='A',
                         help='max training times per step')
-    parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
+    parser.add_argument('--policy_train_batch_size', type=int, default=512, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
     parser.add_argument('--init_exploration_steps', type=int, default=3000, metavar='A',
