@@ -156,13 +156,18 @@ class PredictEnv:
 
         ensemble_lsde_model_op, ensemble_model_input, ensemble_model_actions = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
                                                             total_step, normalizer)
+        inputs = np.concatenate((obs, act), axis=-1)
+        ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
+        print(f'bnn std deviation of prediction: {ensemble_model_vars_bnn.mean(axis=(0,1))}')
 
+        ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
+        ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
+            size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+        ensemble_samples_bnn = normalizer.inverse_transform(ensemble_samples_bnn)
+        ensemble_samples_bnn += obs
         if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_op, fname=f'results/{args.resdir}/prediction_{total_step}')
+            self.plt_predictions(ensemble_lsde_model_op[:,:,:args.rollout_batch_size], ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
 
-        # no_batches = obs.shape[0] // batch_size
-        # obs = obs[:no_batches * batch_size, :]
-        #ensemble_lsde_model_means[:, :, :] += obs
 
         num_models, batch_size, _ = ensemble_lsde_model_op.shape
         if self.model_type == 'pytorch' or self.model_type == 'torchsde':
@@ -192,7 +197,7 @@ class PredictEnv:
         print('lsde is being used for predict')
         return next_obs, rewards, terminals, info
 
-    def plt_predictions(self, X, fname='reconstructions.png'):
+    def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[2]).astype(int)
         nrows = np.ceil(D).astype(int)
@@ -200,5 +205,6 @@ class PredictEnv:
         for i in range(D):
             plt.subplot(nrows, 3, i + 1)
             plt.plot(range(0, tt), X[0, -tt:, i], 'g.-')
+            plt.plot(range(0, tt), X_bnn[0, -tt:, i], 'r.-')
         plt.savefig(f'{fname}')
         plt.close()

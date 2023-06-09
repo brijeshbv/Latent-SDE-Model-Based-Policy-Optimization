@@ -162,7 +162,7 @@ class Projector(nn.Module):
         mean = out[:, :, :self.data_size]
         logvar = self.max_logvar - F.softplus(self.max_logvar - out[:, :, self.data_size:])
         logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
-        return mean, logvar
+        return mean, torch.exp(logvar)
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
@@ -319,7 +319,7 @@ class LatentSDE(nn.Module):
         self.kl_scheduler.step()
 
     def loss(self, logqp_path, predicted_xs_mean, predicted_xs_std, xs_target):
-        xs_dist = Normal(loc=predicted_xs_mean, scale=torch.abs(predicted_xs_std))
+        xs_dist = Normal(loc=predicted_xs_mean, scale=torch.sqrt(predicted_xs_std))
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
         # * self.kl_scheduler.val
         loss_ensemble = -log_pxs + logqp_path
@@ -421,7 +421,7 @@ class LatentSDEModel:
             with torch.no_grad():
 
                 ho_logqp_path, xs_pred, xs_std = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
-                xs_pred = xs_pred + (xs_std.exp() * torch.randn_like(xs_pred))
+                xs_pred = xs_pred + (torch.sqrt(xs_std) * torch.randn_like(xs_pred))
                 holdout_mse_loss = self.ensemble_mse_loss(xs_pred, holdout_labels)
                 holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
 
@@ -473,13 +473,13 @@ class LatentSDEModel:
         actions_norm = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).to(device)
         num_nets, og_batches, og_dim = inputs.shape
         print(f'predicting {inputs.shape} x {steps_to_predict} samples')
-        model_actions = actions.reshape((1, actions.shape[0], actions.shape[1], actions.shape[2]))
-        model_ip = inputs.reshape((1, inputs.shape[0], inputs.shape[1], inputs.shape[2]))
+        model_actions = actions.reshape((1, actions.shape[0], actions.shape[1], actions.shape[2])).detach().cpu().numpy()
+        model_ip = inputs.reshape((1, inputs.shape[0], inputs.shape[1], inputs.shape[2])).detach().cpu().numpy()
         model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
                                dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
-            _, step_op_mean, step_op_std = self.ensemble_model(inputs_norm, actions_norm)
-            step_op = step_op_mean + (step_op_std.exp() * torch.randn_like(step_op_mean))
+            _, step_op_mean, step_op_log_var = self.ensemble_model(inputs_norm, actions_norm)
+            step_op = step_op_mean + (torch.sqrt(step_op_log_var) * torch.randn_like(step_op_mean))
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
             step_op = np.add(step_op, inputs.detach().cpu())
             inputs = step_op
