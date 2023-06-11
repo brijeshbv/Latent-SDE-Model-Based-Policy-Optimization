@@ -5,6 +5,8 @@ import torch
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+
+
 class PredictEnv:
     def __init__(self, model_lsde, model_bnn, env_name, model_type):
         self.model_lsde = model_lsde
@@ -111,11 +113,11 @@ class PredictEnv:
         elif env == "LunarLander-v2":
             reward = numpy.zeros_like(curr_pos[:, 0])
             prev_shaping = (
-                    -100 * np.sqrt(curr_pos[:,0] * curr_pos[:,0] + curr_pos[:,1] * curr_pos[:,1])
-                    - 100 * np.sqrt(curr_pos[:,2] * curr_pos[:,2] + curr_pos[:,3] * curr_pos[:,3])
-                    - 100 * abs(curr_pos[:,4])
-                    + 10 * curr_pos[:,6]
-                    + 10 * curr_pos[:,7]
+                    -100 * np.sqrt(curr_pos[:, 0] * curr_pos[:, 0] + curr_pos[:, 1] * curr_pos[:, 1])
+                    - 100 * np.sqrt(curr_pos[:, 2] * curr_pos[:, 2] + curr_pos[:, 3] * curr_pos[:, 3])
+                    - 100 * abs(curr_pos[:, 4])
+                    + 10 * curr_pos[:, 6]
+                    + 10 * curr_pos[:, 7]
             )
             shaping = (
                     -100 * np.sqrt(next_pos[:, 0] * next_pos[:, 0] + next_pos[:, 1] * next_pos[:, 1])
@@ -154,26 +156,28 @@ class PredictEnv:
         else:
             return_single = False
 
-        ensemble_lsde_model_op, ensemble_model_input, ensemble_model_actions = self.model_lsde.predict(args, obs, act, args.steps_to_predict,
-                                                            total_step, normalizer)
+        ensemble_lsde_model_op, ensemble_model_input, ensemble_model_actions, first_pred = self.model_lsde.predict(args,
+                                                                                                                   obs,
+                                                                                                                   act,
+                                                                                                                   args.steps_to_predict,
+                                                                                                                   total_step,
+                                                                                                                   normalizer)
         inputs = np.concatenate((obs, act), axis=-1)
         ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
-        print(f'bnn std deviation of prediction: {ensemble_model_vars_bnn.mean(axis=(0,1))}')
+        print(f'bnn std deviation of prediction: {ensemble_model_vars_bnn.mean(axis=(0, 1))}')
 
         ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
         ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
             size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+
+        if total_step % 250 == 0:
+            self.plt_predictions(first_pred[:, :, :args.rollout_batch_size], ensemble_samples_bnn[:, :, :],
+                                 fname=f'results/{args.resdir}/prediction_{total_step}')
         ensemble_samples_bnn = normalizer.inverse_transform(ensemble_samples_bnn)
         ensemble_samples_bnn += obs
-        if total_step % 250 == 0:
-            self.plt_predictions(ensemble_lsde_model_op[:,:,:args.rollout_batch_size], ensemble_samples_bnn[:, :, :], fname=f'results/{args.resdir}/prediction_{total_step}')
-
-
         num_models, batch_size, _ = ensemble_lsde_model_op.shape
-        if self.model_type == 'pytorch' or self.model_type == 'torchsde':
-            model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
-        else:
-            model_idxes = self.model_lsde.random_inds(batch_size)
+        model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
+
         batch_idxes = np.arange(0, batch_size)
 
         samples = ensemble_lsde_model_op[model_idxes, batch_idxes]

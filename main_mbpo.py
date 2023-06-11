@@ -47,9 +47,9 @@ def readParser():
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
     # todo was 7
-    parser.add_argument('--num_networks', type=int, default=4, metavar='E',
+    parser.add_argument('--num_networks', type=int, default=6, metavar='E',
                         help='ensemble size (default: 7)')
-    parser.add_argument('--num_elites', type=int, default=3, metavar='E',
+    parser.add_argument('--num_elites', type=int, default=4, metavar='E',
                         help='elite size (default: 5)')
     parser.add_argument('--pred_hidden_size', type=int, default=200, metavar='E',
                         help='hidden size for predictive model')
@@ -268,9 +268,9 @@ def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
                                                            model_pool, agent)
 
             total_step += 1
-            if total_step % 100 == 0:
+            if total_step % 200 == 0:
                 print(f'Steps taken: {total_step}\n')
-            if total_step % 250 == 0:
+            if total_step % args.epoch_length == 0:
                 '''
                 avg_reward_len = min(len(env_sampler.path_rewards), 5)
                 avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len

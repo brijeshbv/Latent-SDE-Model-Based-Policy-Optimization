@@ -290,9 +290,9 @@ class LatentSDE(nn.Module):
                 predicted_xs_std = xs_std
             else:
                 predicted_xs_mean = torch.cat((predicted_xs_mean, xs_mean),
-                                         dim=1)
+                                              dim=1)
                 predicted_xs_std = torch.cat((predicted_xs_std, xs_std),
-                                         dim=1)
+                                             dim=1)
 
             qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
             pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
@@ -321,8 +321,7 @@ class LatentSDE(nn.Module):
     def loss(self, logqp_path, predicted_xs_mean, predicted_xs_std, xs_target):
         xs_dist = Normal(loc=predicted_xs_mean, scale=torch.sqrt(predicted_xs_std))
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
-        # * self.kl_scheduler.val
-        loss_ensemble = -log_pxs + logqp_path
+        loss_ensemble = -log_pxs + logqp_path * self.kl_scheduler.val
         loss = loss_ensemble.mean(dim=0)
         if self.use_decay:
             loss += self.get_decay_loss()
@@ -330,8 +329,8 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=32,
-                 context_size=32):
+    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=8,
+                 context_size=8):
         self.agent = agent
         self._snapshots = None
         self._state = None
@@ -413,15 +412,15 @@ class LatentSDEModel:
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
                 train_action_input = torch.from_numpy(train_actions_inputs[idx]).float().to(device)
                 losses = []
-                logqp_path, predicted_xs_mean, predicted_xs_std = self.ensemble_model(train_input, train_action_input)
-                loss, _ = self.ensemble_model.loss(logqp_path, predicted_xs_mean, predicted_xs_std, train_label)
+                logqp_path, predicted_xs_mean, predicted_xs_var = self.ensemble_model(train_input, train_action_input)
+                loss, _ = self.ensemble_model.loss(logqp_path, predicted_xs_mean, predicted_xs_var, train_label)
                 self.ensemble_model.opt_loss(loss)
                 losses.append(loss)
 
             with torch.no_grad():
 
-                ho_logqp_path, xs_pred, xs_std = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
-                xs_pred = xs_pred + (torch.sqrt(xs_std) * torch.randn_like(xs_pred))
+                ho_logqp_path, xs_pred, xs_var = self.ensemble_model(holdout_inputs, holdout_actions_inputs)
+                xs_pred = xs_pred + (torch.sqrt(xs_var) * torch.randn_like(xs_pred))
                 holdout_mse_loss = self.ensemble_mse_loss(xs_pred, holdout_labels)
                 holdout_mse_loss = holdout_mse_loss.detach().cpu().numpy()
 
@@ -434,7 +433,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1250 and epoch > 100:
+                elif total_step <= 500 and epoch > 70:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
@@ -473,14 +472,19 @@ class LatentSDEModel:
         actions_norm = torch.asarray(self.action_scaler.transform(actions), dtype=torch.float32).to(device)
         num_nets, og_batches, og_dim = inputs.shape
         print(f'predicting {inputs.shape} x {steps_to_predict} samples')
-        model_actions = actions.reshape((1, actions.shape[0], actions.shape[1], actions.shape[2])).detach().cpu().numpy()
+        model_actions = actions.reshape(
+            (1, actions.shape[0], actions.shape[1], actions.shape[2])).detach().cpu().numpy()
         model_ip = inputs.reshape((1, inputs.shape[0], inputs.shape[1], inputs.shape[2])).detach().cpu().numpy()
         model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
+                               dtype=torch.float32).detach().cpu()
+        first_preds = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
                                dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
             _, step_op_mean, step_op_log_var = self.ensemble_model(inputs_norm, actions_norm)
             step_op = step_op_mean + (torch.sqrt(step_op_log_var) * torch.randn_like(step_op_mean))
+            first_pred = step_op
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
+
             step_op = np.add(step_op, inputs.detach().cpu())
             inputs = step_op
             inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32)
@@ -494,6 +498,9 @@ class LatentSDEModel:
             model_op = np.concatenate(
                 (model_op, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
                 axis=0)
+            first_preds = np.concatenate(
+                (first_preds, first_pred.reshape(1, first_pred.shape[0], first_pred.shape[1], first_pred.shape[2])),
+                axis=0)
             if i < steps_to_predict - 1:
                 model_ip = np.concatenate(
                     (model_ip, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
@@ -504,7 +511,8 @@ class LatentSDEModel:
 
         num_steps, ensemb, batch, dim = model_op.shape
         model_op = model_op.reshape((ensemb, num_steps * batch, dim))
+        first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
         model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
         num_steps, ensemb, batch, dim = model_actions.shape
         model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
-        return model_op, model_ip, model_actions
+        return model_op, model_ip, model_actions, first_preds
