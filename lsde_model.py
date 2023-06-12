@@ -150,8 +150,6 @@ class Projector(nn.Module):
         self.lin = nn.Sequential(
             EnsembleFC(latent_size, hidden_size, network_size),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, hidden_size, network_size),
-            nn.Sigmoid(),
             EnsembleFC(hidden_size, data_size + data_size, network_size)
         )
         self.max_logvar = nn.Parameter((torch.ones((1, self.data_size)).float() / 2).to(device), requires_grad=False)
@@ -191,14 +189,10 @@ class LatentSDE(nn.Module):
         self.f_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Sigmoid(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Sigmoid(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.Sigmoid(),
-            nn.Linear(hidden_size, hidden_size),
             nn.Sigmoid(),
             nn.Linear(hidden_size, latent_size),
         )
@@ -321,7 +315,8 @@ class LatentSDE(nn.Module):
     def loss(self, logqp_path, predicted_xs_mean, predicted_xs_std, xs_target):
         xs_dist = Normal(loc=predicted_xs_mean, scale=torch.sqrt(predicted_xs_std))
         log_pxs = xs_dist.log_prob(xs_target).mean(dim=(2)).mean(dim=1)
-        loss_ensemble = -log_pxs + logqp_path * self.kl_scheduler.val
+        # *self.kl_scheduler.val
+        loss_ensemble = -log_pxs + logqp_path
         loss = loss_ensemble.mean(dim=0)
         if self.use_decay:
             loss += self.get_decay_loss()
@@ -433,7 +428,7 @@ class LatentSDEModel:
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 500 and epoch > 70:
+                elif total_step <= 1000 and epoch > 30:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
@@ -499,7 +494,7 @@ class LatentSDEModel:
                 (model_op, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
                 axis=0)
             first_preds = np.concatenate(
-                (first_preds, first_pred.reshape(1, first_pred.shape[0], first_pred.shape[1], first_pred.shape[2])),
+                (first_preds, first_pred.detach().cpu().reshape(1, first_pred.shape[0], first_pred.shape[1], first_pred.shape[2])),
                 axis=0)
             if i < steps_to_predict - 1:
                 model_ip = np.concatenate(
