@@ -210,7 +210,7 @@ class LatentSDE(nn.Module):
         )
 
         self.projector = Projector(data_size, latent_size, hidden_size, network_size)
-        latent_and_action_size = latent_size + action_dim + data_size
+        latent_and_action_size = latent_size + action_dim
         self.action_encode_net = nn.Sequential(
             EnsembleFC(latent_and_action_size, latent_size, network_size))
         self.pz0_mean = nn.Parameter(torch.zeros(network_size, 1, latent_size))
@@ -260,9 +260,9 @@ class LatentSDE(nn.Module):
 
             z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
             if i == 0:
-                latent_and_data = torch.cat((z0[:, :, :], actions[:, 0, :, :], xs[:, 0, :, :]), dim=2)
+                latent_and_data = torch.cat((z0[:, :, :], actions[:, 0, :, :]), dim=2)
             elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[:, -1, :, :], actions[:, i, :, :], xs[:, i, :, :]), dim=2)
+                latent_and_data = torch.cat((zs[:, -1, :, :], actions[:, i, :, :]), dim=2)
             z_encoded = self.action_encode_net(latent_and_data)
 
             z_encoded = z_encoded.reshape((no_networks * no_batches, -1))
@@ -324,8 +324,8 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=8,
-                 context_size=8):
+    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=128,
+                 context_size=128):
         self.agent = agent
         self._snapshots = None
         self._state = None

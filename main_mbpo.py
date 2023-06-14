@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=500000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=200000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=2, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=4, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=3000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=2000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -143,9 +143,9 @@ def train_predict_model(args, env_pool, predict_env, total_step):
 
     predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
 
-    inputs = np.concatenate((state, action), axis=-1)
-    print(f'training bnn model, {inputs.shape}')
-    predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
+    # inputs = np.concatenate((state, action), axis=-1)
+    # print(f'training bnn model, {inputs.shape}')
+    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -165,7 +165,7 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, info = predict_env.step(args, state, action, total_step, normalizer)
+        state, next_states, rewards, terminals,action, info = predict_env.step(args, state, action, total_step, normalizer)
         # TODO: Push a batch of samples
         model_pool.push_batch(
             [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
