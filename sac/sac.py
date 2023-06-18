@@ -25,6 +25,8 @@ class SAC(object):
         self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
         if args.env_name == 'Hopper-v4':
             self.observations_to_include = torch.arange(12)[1:]
+        if args.env_name == 'Swimmer-v4':
+            self.observations_to_include = torch.arange(10)[2:]
         hard_update(self.critic_target, self.critic)
 
         if self.policy_type == "Gaussian":

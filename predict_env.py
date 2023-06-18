@@ -17,21 +17,6 @@ class PredictEnv:
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
         if env_name == "Hopper-v4":
-            # healthy_state_range = (-100.0, 100.0),
-            # healthy_z_range = (0.7, float("inf")),
-            # healthy_angle_range = (-0.2, 0.2),
-            # assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
-            #
-            # height = next_obs[:, 1]
-            # angle = next_obs[:, 2]
-            # not_done = np.isfinite(next_obs).all(axis=-1) \
-            #            * np.abs(next_obs[:, 2:] < 100).all(axis=-1) \
-            #            * (height > .7) \
-            #            * (np.abs(angle) < .2)
-            #
-            # done = ~not_done
-            # done = done[:, None]
-
             z, angle = obs[:, 1], obs[:, 2]
             state = obs[:, 2:]
 
@@ -80,8 +65,10 @@ class PredictEnv:
             done = ~notdone
 
             done = done[:, None]
-
             return done
+        elif 'Swimmer-v4' in env_name:
+            done = np.zeros_like(obs[:, 0], dtype=bool)
+            return done[:, None]
 
     def _get_logprob(self, x, means, variances):
 
@@ -108,6 +95,16 @@ class PredictEnv:
             reward += numpy.ones_like(curr_pos[:, 0])
             cost = 1e-3 * np.square(action).sum(axis=1)
             reward = reward - cost
+        elif env == "Swimmer-v4":
+            ctrl_cost_weight = 0.001
+            xy_position_before = curr_pos[:, 0:2]
+
+            xy_position_after = next_pos[:, 0:2]
+            xy_velocity = (xy_position_after - xy_position_before) / 0.04
+            x_velocity, y_velocity = xy_velocity[:,0], xy_velocity[:,1]
+            forward_reward = 1 * x_velocity
+            control_cost = ctrl_cost_weight * np.sum(np.square(action), axis=1)
+            reward = forward_reward - control_cost
         elif env == "InvertedPendulum-v4":
             return numpy.ones_like(curr_pos[:, 0])
         elif env == "LunarLander-v2":

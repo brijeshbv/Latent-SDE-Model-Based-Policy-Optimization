@@ -317,6 +317,8 @@ def main(args=None):
     observation_space_shape_sac = env.observation_space.shape[0]
     if args.env_name == "Hopper-v4" :
         observation_space_shape_sac -= 1
+    if args.env_name == "Swimmer-v4":
+        observation_space_shape_sac -= 2
     # Initial agent
     agent = SAC(observation_space_shape_sac, env.action_space, args)
 
