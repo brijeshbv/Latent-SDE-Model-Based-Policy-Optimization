@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=200000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=4, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=100, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -340,7 +340,7 @@ def main(args=None):
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
     # Initial pool for model
-    rollouts_per_epoch = args.rollout_batch_size * args.epoch_length / args.model_train_freq
+    rollouts_per_epoch = args.rollout_batch_size * args.steps_to_predict * args.epoch_length / args.model_train_freq
     model_steps_per_epoch = int(1 * rollouts_per_epoch)
     new_pool_size = args.model_retain_epochs * model_steps_per_epoch
     model_pool = ReplayMemory(new_pool_size)
