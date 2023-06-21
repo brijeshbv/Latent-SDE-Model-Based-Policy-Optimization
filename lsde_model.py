@@ -17,6 +17,10 @@ import math
 import torch.nn.functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+font = {'family': 'normal',
+        'size': 40}
+
+matplotlib.rc('font', **font)
 
 
 class StandardScaler(object):
@@ -142,6 +146,7 @@ def init_weights(m):
         truncated_normal_init(m.weight, std=1 / (2 * np.sqrt(input_dim)))
         m.bias.data.fill_(0.0)
 
+
 class Projector(nn.Module):
 
     def __init__(self, data_size, latent_size, hidden_size, network_size):
@@ -150,7 +155,7 @@ class Projector(nn.Module):
         self.lin = nn.Sequential(
             EnsembleFC(latent_size, hidden_size, network_size),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, data_size , network_size)
+            EnsembleFC(hidden_size, data_size, network_size)
         )
         self.max_logvar = nn.Parameter((torch.ones((1, self.data_size)).float() / 2).to(device), requires_grad=False)
         self.min_logvar = nn.Parameter((-torch.ones((1, self.data_size)).float() * 10).to(device), requires_grad=False)
@@ -160,8 +165,9 @@ class Projector(nn.Module):
         mean = out[:, :, :]
         # logvar = self.max_logvar - F.softplus(self.max_logvar - out[:, :, self.data_size:])
         # logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
-        #, torch.exp(logvar)
+        # , torch.exp(logvar)
         return mean
+
 
 class LatentSDE(nn.Module):
     sde_type = "stratonovich"
@@ -353,13 +359,27 @@ class LatentSDEModel:
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = 50
         D = np.ceil(X.shape[1]).astype(int)
-        nrows = np.ceil(D).astype(int)
+        nrows = np.ceil(D / 3).astype(int)
         lag = 0
-        plt.figure(2, figsize=(40, 40))
-        for i in range(D):
-            plt.subplot(nrows, 3, i + 1)
-            plt.plot(range(0, tt), X[-tt:, i].detach().cpu().numpy(), 'r.-')
-            plt.plot(range(lag, tt), Xrec[-tt:, i].detach().cpu().numpy(), 'b.-')
+        fig, axs = plt.subplots(nrows, 3, layout="constrained", figsize=(50, 40))
+        # set the spacing between subplots
+        plt.subplots_adjust(left=0.1,
+                            bottom=0.1,
+                            right=0.9,
+                            top=0.9,
+                            wspace=0.4,
+                            hspace=0.4)
+        i = 0
+        for ax in axs.ravel():
+            if i >= D:
+                ax.set_axis_off()
+                break
+            ax.plot(range(0, tt), X[-tt:, i].detach().cpu().numpy(), 'r', label='target')
+            ax.plot(range(lag, tt), Xrec[-tt:, i].detach().cpu().numpy(), 'b', label='prediction')
+            ax.legend(loc='upper right')
+            ax.set_xlabel("Steps")
+            ax.set_ylabel(f'Dimension-{i}')
+            i += 1
         plt.savefig(f'{fname}-{idx}')
         if show is False:
             plt.close()
@@ -474,7 +494,7 @@ class LatentSDEModel:
         model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
                                dtype=torch.float32).detach().cpu()
         first_preds = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
-                               dtype=torch.float32).detach().cpu()
+                                  dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
             _, step_op_mean = self.ensemble_model(inputs_norm, actions_norm)
             step_op = step_op_mean + (0.3 * torch.randn_like(step_op_mean))
@@ -495,7 +515,8 @@ class LatentSDEModel:
                 (model_op, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
                 axis=0)
             first_preds = np.concatenate(
-                (first_preds, first_pred.detach().cpu().reshape(1, first_pred.shape[0], first_pred.shape[1], first_pred.shape[2])),
+                (first_preds,
+                 first_pred.detach().cpu().reshape(1, first_pred.shape[0], first_pred.shape[1], first_pred.shape[2])),
                 axis=0)
             if i < steps_to_predict - 1:
                 model_ip = np.concatenate(
