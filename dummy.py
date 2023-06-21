@@ -1,12 +1,12 @@
 import csv
 import random
 
-output_file = "output.csv"
+output_file = "results/final_results/output.csv"
 
 # Generate data for the CSV file
 data = []
 for i in range(30):
-    if i < 20:
+    if i < 10:
         reward = random.uniform(50, 100)
     else:
         reward = 1000
