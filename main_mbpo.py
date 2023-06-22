@@ -4,21 +4,20 @@ import gym
 import torch
 import numpy as np
 from itertools import count
-import wandb
-
+import tqdm
 import logging
 
-import os
-import os.path as osp
-import json
+
+import wandb
 
 from sac.replay_memory import ReplayMemory
 from sac.sac import SAC
 from model import EnsembleDynamicsModel
 from predict_env import PredictEnv
 from sample_env import EnvSampler
-from tf_models.constructor import construct_model, format_samples_for_training
+from lsde_model import LatentSDEModel, StandardScaler
 
+normalizer = None
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -47,8 +46,8 @@ def readParser():
                         help='hidden size (default: 256)')
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                         help='learning rate (default: 0.0003)')
-
-    parser.add_argument('--num_networks', type=int, default=7, metavar='E',
+    # todo was 7
+    parser.add_argument('--num_networks', type=int, default=5, metavar='E',
                         help='ensemble size (default: 7)')
     parser.add_argument('--num_elites', type=int, default=5, metavar='E',
                         help='elite size (default: 5)')
@@ -56,16 +55,21 @@ def readParser():
                         help='hidden size for predictive model')
     parser.add_argument('--reward_size', type=int, default=1, metavar='E',
                         help='environment reward size')
-
+    # todo restore replay size 1000000
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
 
     parser.add_argument('--model_retain_epochs', type=int, default=1, metavar='A',
                         help='retain epochs')
+    # todo was 250
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
-    parser.add_argument('--rollout_batch_size', type=int, default=100000, metavar='A',
+    # todo rollout_batch_size replay size 10000, 65536
+    parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
                         help='rollout number M')
+    parser.add_argument('--steps_to_predict', type=int, default=100, metavar='A',
+                        help='number of steps the env model should predict')
+    # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
                         help='steps per epoch')
     parser.add_argument('--rollout_min_epoch', type=int, default=20, metavar='A',
@@ -78,6 +82,7 @@ def readParser():
                         help='rollout max length')
     parser.add_argument('--num_epoch', type=int, default=1000, metavar='A',
                         help='total number of epochs')
+    # todo was 1000
     parser.add_argument('--min_pool_size', type=int, default=1000, metavar='A',
                         help='minimum pool size')
     parser.add_argument('--real_ratio', type=float, default=0.05, metavar='A',
@@ -90,82 +95,24 @@ def readParser():
                         help='max training times per step')
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
-    parser.add_argument('--init_exploration_steps', type=int, default=5000, metavar='A',
+    # todo was 5000
+    parser.add_argument('--init_exploration_steps', type=int, default=2000, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
-
 
     parser.add_argument('--model_type', default='tensorflow', metavar='A',
                         help='predict model -- pytorch or tensorflow')
     parser.add_argument('--wandb', default='yes', metavar='A',
                         help='wandb log yes or no')
-    parser.add_argument('--resdir', default="plts",metavar='A',
+    parser.add_argument('--resdir', default="plts", metavar='A',
                         help='results directory')
-
     parser.add_argument('--cuda', default=True, action="store_true",
                         help='run on CUDA (default: True)')
+    parser.add_argument('--exclude_current_positions_from_observation', default=False, metavar="A",
+                        help='exclude_current_positions_from_observation')
+
     return parser.parse_args()
-
-
-def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
-    total_step = 0
-    reward_sum = 0
-    rollout_length = 1
-    exploration_before_start(args, env_sampler, env_pool, agent)
-
-    for epoch_step in range(args.num_epoch):
-        start_step = total_step
-        train_policy_steps = 0
-        for i in count():
-            cur_step = total_step - start_step
-
-            if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
-                print('breaking cycle')
-                break
-
-            if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
-                train_predict_model(args, env_pool, predict_env, total_step)
-
-                new_rollout_length = set_rollout_length(args, epoch_step)
-                if rollout_length != new_rollout_length:
-                    rollout_length = new_rollout_length
-                    model_pool = resize_model_pool(args, rollout_length, model_pool)
-
-                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
-
-            cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
-            env_pool.push(cur_state, action, reward, next_state, done)
-
-            if len(env_pool) > args.min_pool_size:
-                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
-
-            total_step += 1
-            if total_step % 200 == 0:
-                print(f'Steps taken: {total_step}\n')
-            if total_step % args.epoch_length == 0:
-                '''
-                avg_reward_len = min(len(env_sampler.path_rewards), 5)
-                avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len
-                logging.info("Step Reward: " + str(total_step) + " " + str(env_sampler.path_rewards[-1]) + " " + str(avg_reward))
-                print(total_step, env_sampler.path_rewards[-1], avg_reward)
-                '''
-                env_sampler.current_state = None
-                sum_reward = 0
-                done = False
-                test_step = 0
-
-                while (not done) and (test_step != args.max_path_length):
-                    cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
-                    sum_reward += reward
-                    test_step += 1
-                # logger.record_tabular("total_step", total_step)
-                # logger.record_tabular("sum_reward", sum_reward)
-                # logger.dump_tabular()
-                if args.wandb != 'no':
-                    wandb.log({'reward': sum_reward},step = total_step)
-                logging.info("Step Reward: " + str(total_step) + " " + str(sum_reward))
-                # print(total_step, sum_reward)
 
 
 def exploration_before_start(args, env_sampler, env_pool, agent):
@@ -176,19 +123,29 @@ def exploration_before_start(args, env_sampler, env_pool, agent):
 
 def set_rollout_length(args, epoch_step):
     rollout_length = (min(max(args.rollout_min_length + (epoch_step - args.rollout_min_epoch)
-                              / (args.rollout_max_epoch - args.rollout_min_epoch) * (args.rollout_max_length - args.rollout_min_length),
+                              / (args.rollout_max_epoch - args.rollout_min_epoch) * (
+                                      args.rollout_max_length - args.rollout_min_length),
                               args.rollout_min_length), args.rollout_max_length))
     return int(rollout_length)
 
 
-def train_predict_model(args, env_pool, predict_env, epoch_step):
+def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
-    delta_state = next_state - state
-    inputs = np.concatenate((state, action), axis=-1)
-    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state), axis=-1)
-    print(f'training model, {inputs.shape}')
-    predict_env.model.train(args ,inputs, labels, epoch_step)
+    delta_state_label = next_state - state
+    global normalizer
+    if normalizer is None:
+        normalizer = StandardScaler()
+        normalizer.fit(delta_state_label)
+    delta_state_label = normalizer.transform(delta_state_label)
+    inputs = state
+    print(f'training lsde model, {inputs.shape}')
+
+    predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
+
+    # inputs = np.concatenate((state, action), axis=-1)
+    # print(f'training bnn model, {inputs.shape}')
+    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -208,9 +165,10 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        next_states, rewards, terminals, trunc = predict_env.step(state, action, total_step)
+        state, next_states, rewards, terminals,action, info = predict_env.step(args, state, action, total_step, normalizer)
         # TODO: Push a batch of samples
-        model_pool.push_batch([(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
+        model_pool.push_batch(
+            [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
         if nonterm_mask.sum() == 0:
             break
@@ -231,20 +189,25 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
         env_state, env_action, env_reward, env_next_state, env_done = env_pool.sample(int(env_batch_size))
 
         if model_batch_size > 0 and len(model_pool) > 0:
-            model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(int(model_batch_size))
-            batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate((env_state, model_state), axis=0), \
-                                                                                    np.concatenate((env_action, model_action),
-                                                                                                   axis=0), np.concatenate(
+            model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(
+                int(model_batch_size))
+            batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate(
+                (env_state, model_state), axis=0), \
+                np.concatenate(
+                    (env_action, model_action),
+                    axis=0), np.concatenate(
                 (np.reshape(env_reward, (env_reward.shape[0], -1)), model_reward), axis=0), \
-                                                                                    np.concatenate((env_next_state, model_next_state),
-                                                                                                   axis=0), np.concatenate(
+                np.concatenate((env_next_state,
+                                model_next_state),
+                               axis=0), np.concatenate(
                 (np.reshape(env_done, (env_done.shape[0], -1)), model_done), axis=0)
         else:
             batch_state, batch_action, batch_reward, batch_next_state, batch_done = env_state, env_action, env_reward, env_next_state, env_done
 
         batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
         batch_done = (~batch_done).astype(int)
-        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, i)
+        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done),
+                                args.policy_train_batch_size, i)
 
     return args.num_train_repeat
 
@@ -260,7 +223,7 @@ class SingleEnvWrapper(gym.Wrapper):
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
     def step(self, action):
-        obs, reward, done,trunc,  info = self.env.step(action)
+        obs, reward, done, trunc, info = self.env.step(action)
         torso_height, torso_ang = self.env.sim.data.qpos[1:3]  # Need this in the obs for determining when to stop
         obs = np.append(obs, [torso_height, torso_ang])
 
@@ -273,43 +236,113 @@ class SingleEnvWrapper(gym.Wrapper):
         return obs
 
 
+def train(args, env_sampler, predict_env, agent, env_pool, model_pool):
+    total_step = 0
+    reward_sum = 0
+    rollout_length = 1
+    exploration_before_start(args, env_sampler, env_pool, agent)
+
+    for epoch_step in tqdm.tqdm(range(args.num_epoch)):
+        start_step = total_step
+        train_policy_steps = 0
+        for i in count():
+            cur_step = total_step - start_step
+
+            if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
+                break
+            if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
+                train_predict_model(args, env_pool, predict_env, total_step)
+
+                new_rollout_length = set_rollout_length(args, epoch_step)
+                if rollout_length != new_rollout_length:
+                    rollout_length = new_rollout_length
+                    model_pool = resize_model_pool(args, rollout_length, model_pool)
+
+                rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length, total_step)
+
+            cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
+            env_pool.push(cur_state, action, reward, next_state, done)
+
+            if len(env_pool) > args.min_pool_size:
+                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool,
+                                                           model_pool, agent)
+
+            total_step += 1
+            if total_step % 200 == 0:
+                print(f'Steps taken: {total_step}\n')
+            if total_step % 250 == 0:
+                '''
+                avg_reward_len = min(len(env_sampler.path_rewards), 5)
+                avg_reward = sum(env_sampler.path_rewards[-avg_reward_len:]) / avg_reward_len
+                logging.info("Step Reward: " + str(total_step) + " " + str(env_sampler.path_rewards[-1]) + " " + str(avg_reward))
+                print(total_step, env_sampler.path_rewards[-1], avg_reward)
+                '''
+                env_sampler.current_state = None
+                env_sampler.path_length = 0
+                sum_reward = 0
+                done = False
+                test_step = 0
+
+                while (not done) and (test_step != args.max_path_length):
+                    cur_state, action, next_state, reward, done, info = env_sampler.sample(agent, eval_t=True)
+                    sum_reward += reward
+                    test_step += 1
+                if args.wandb != 'no':
+                    wandb.log({'reward': sum_reward}, step=total_step)
+                print(f'Steps: {total_step}, path_len: {test_step} , reward: {sum_reward}\n')
+                logging.info(f'Steps: {total_step} , reward: {sum_reward}\n')
+
+
 def main(args=None):
     if args is None:
         args = readParser()
     if args.wandb != 'no':
         wandb.login()
         wandb.init(project='lsde-mbrl')
+
+
     # Initial environment
     if args.env_name == 'InvertedPendulum-v4':
         env = gym.make(args.env_name)
     else:
-        env = gym.make(args.env_name,exclude_current_positions_from_observation=False)
+        env = gym.make(args.env_name,
+                       exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
+
+
 
     # Set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    #env.seed(args.seed)
-
+    # env.seed(args.seed)
+    observation_space_shape_sac = env.observation_space.shape[0]
+    if args.env_name == "Hopper-v4" :
+        observation_space_shape_sac -= 1
+    if args.env_name == "Swimmer-v4":
+        observation_space_shape_sac -= 2
     # Initial agent
-    agent = SAC(env.observation_space.shape[0], env.action_space, args)
+    agent = SAC(observation_space_shape_sac, env.action_space, args)
 
     # Initial ensemble model
     state_size = np.prod(env.observation_space.shape)
     action_size = np.prod(env.action_space.shape)
     if args.model_type == 'pytorch':
-        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, args.pred_hidden_size,
+        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+                                          args.pred_hidden_size,
                                           use_decay=args.use_decay)
-    else:
-        env_model = construct_model(obs_dim=state_size, act_dim=action_size, hidden_dim=args.pred_hidden_size, num_networks=args.num_networks,
-                                    num_elites=args.num_elites)
+    elif args.model_type == 'torchsde':
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, agent,
+                                    args.pred_hidden_size)
+        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+                                           args.pred_hidden_size,
+                                           use_decay=args.use_decay)
 
     # Predict environments
-    predict_env = PredictEnv(env_model, args.env_name, args.model_type)
+    predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
     # Initial pool for model
-    rollouts_per_epoch = args.rollout_batch_size * args.epoch_length / args.model_train_freq
+    rollouts_per_epoch = args.rollout_batch_size * args.steps_to_predict * args.epoch_length / args.model_train_freq
     model_steps_per_epoch = int(1 * rollouts_per_epoch)
     new_pool_size = args.model_retain_epochs * model_steps_per_epoch
     model_pool = ReplayMemory(new_pool_size)
@@ -321,5 +354,5 @@ def main(args=None):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+    # logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
     main()

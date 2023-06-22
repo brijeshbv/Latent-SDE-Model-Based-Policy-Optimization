@@ -12,7 +12,7 @@ class SAC(object):
         self.gamma = args.gamma
         self.tau = args.tau
         self.alpha = args.alpha
-
+        self.observations_to_include = torch.arange(num_inputs)
         self.policy_type = args.policy
         self.target_update_interval = args.target_update_interval
         self.automatic_entropy_tuning = args.automatic_entropy_tuning
@@ -23,6 +23,10 @@ class SAC(object):
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
 
         self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
+        if args.env_name == 'Hopper-v4':
+            self.observations_to_include = torch.arange(12)[1:]
+        if args.env_name == 'Swimmer-v4':
+            self.observations_to_include = torch.arange(10)[2:]
         hard_update(self.critic_target, self.critic)
 
         if self.policy_type == "Gaussian":
@@ -42,8 +46,13 @@ class SAC(object):
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
     def select_action(self, state, eval=False):
+        if len(state.shape) == 1:
+            state = state[self.observations_to_include.detach().cpu()]
+        else:
+            state = state[:, self.observations_to_include.detach().cpu()]
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-        if eval == False:
+
+        if not eval:
             action, _, _ = self.policy.sample(state)
         else:
             _, _, action = self.policy.sample(state)
@@ -53,6 +62,8 @@ class SAC(object):
         # Sample a batch from memory
         # state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory
+        state_batch = state_batch[:, self.observations_to_include.detach().cpu()]
+        next_state_batch = next_state_batch[:, self.observations_to_include.detach().cpu()]
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)

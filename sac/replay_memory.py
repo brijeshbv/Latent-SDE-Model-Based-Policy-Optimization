@@ -2,6 +2,7 @@ import random
 import numpy as np
 from operator import itemgetter
 
+
 class ReplayMemory:
     def __init__(self, capacity):
         self.capacity = capacity
@@ -15,6 +16,7 @@ class ReplayMemory:
         self.position = (self.position + 1) % self.capacity
 
     def push_batch(self, batch):
+        print(f'capacity: {self.capacity}, buffer len: {len(self.buffer)}, position: {self.position},batch len: {len(batch)} ')
         if len(self.buffer) < self.capacity:
             append_len = min(self.capacity - len(self.buffer), len(batch))
             self.buffer.extend([None] * append_len)
@@ -23,6 +25,7 @@ class ReplayMemory:
             self.buffer[self.position : self.position + len(batch)] = batch
             self.position += len(batch)
         else:
+            print(f'buffer filled, starting over from position, capacity: {self.capacity}, buffer len: {len(self.buffer)}, position: {self.position},batch len: {len(batch)} ')
             self.buffer[self.position : len(self.buffer)] = batch[:len(self.buffer) - self.position]
             self.buffer[:len(batch) - len(self.buffer) + self.position] = batch[len(self.buffer) - self.position:]
             self.position = len(batch) - len(self.buffer) + self.position
@@ -38,6 +41,8 @@ class ReplayMemory:
         idxes = np.random.randint(0, len(self.buffer), batch_size)
         batch = list(itemgetter(*idxes)(self.buffer))
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
+        if state.shape[0] > batch_size:
+            print(f'sampling more than needed batch size')
         return state, action, reward, next_state, done
 
     def return_all(self):

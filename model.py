@@ -9,7 +9,9 @@ import numpy as np
 import math
 import gzip
 import itertools
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -85,7 +87,8 @@ class EnsembleFC(nn.Module):
     ensemble_size: int
     weight: torch.Tensor
 
-    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0., bias: bool = True) -> None:
+    def __init__(self, in_features: int, out_features: int, ensemble_size: int, weight_decay: float = 0.,
+                 bias: bool = True) -> None:
         super(EnsembleFC, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -101,7 +104,6 @@ class EnsembleFC(nn.Module):
     def reset_parameters(self) -> None:
         pass
 
-
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         w_times_x = torch.bmm(input, self.weight)
         return torch.add(w_times_x, self.bias[:, None, :])  # w times x + b
@@ -113,7 +115,7 @@ class EnsembleFC(nn.Module):
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, state_size, action_size, reward_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
+    def __init__(self, state_size, action_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
         super(EnsembleModel, self).__init__()
         self.hidden_size = hidden_size
         self.nn1 = EnsembleFC(state_size + action_size, hidden_size, ensemble_size, weight_decay=0.000025)
@@ -122,7 +124,7 @@ class EnsembleModel(nn.Module):
         self.nn4 = EnsembleFC(hidden_size, hidden_size, ensemble_size, weight_decay=0.000075)
         self.use_decay = use_decay
 
-        self.output_dim = state_size + reward_size
+        self.output_dim = state_size
         # Add variance output
         self.nn5 = EnsembleFC(hidden_size, self.output_dim * 2, ensemble_size, weight_decay=0.0001)
 
@@ -190,19 +192,18 @@ class EnsembleModel(nn.Module):
 
 
 class EnsembleDynamicsModel():
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
+    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
         self.model_list = []
         self.state_size = state_size
         self.action_size = action_size
-        self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
+        self.ensemble_model = EnsembleModel(state_size, action_size, network_size, hidden_size, use_decay=use_decay)
         self.scaler = StandardScaler()
 
-    def train(self,args, inputs, labels,epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
+    def train(self, args, inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -223,7 +224,7 @@ class EnsembleDynamicsModel():
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
         holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
-        print(f'training model, train_size : {train_inputs.shape}')
+        print(f'training bnn model, train_size : {train_inputs.shape}')
         for epoch in itertools.count():
 
             train_idx = np.vstack([np.random.permutation(train_inputs.shape[0]) for _ in range(self.network_size)])
@@ -241,23 +242,20 @@ class EnsembleDynamicsModel():
             with torch.no_grad():
                 holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
                 predictions = holdout_mean + holdout_logvar.exp() * torch.randn_like(holdout_mean)
-                _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels, inc_var_loss=False)
+                _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels,
+                                                                 inc_var_loss=True)
                 holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
-                    if epoch_step % 500 == 0:
-                        self.plot_gym_results(holdout_labels[:, :50, : self.reward_size],
-                                              predictions[:, :50, :self.reward_size],
-                                              fname=f'results/{args.resdir}/recon_step__rwd{epoch_step}')
+                    if epoch_step % 250 == 0:
                         self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
-                                              predictions[:, :50, self.reward_size:],
-                                              fname=f'results/{args.resdir}/recon_step_{epoch_step}')
-                    print(f'training model ended, {epoch} epochs')
+                                              predictions[:, :50, :],
+                                              fname=f'results/{args.resdir}/bnn_step_{epoch_step}')
+                    print(f'training ended epoch no, {epoch}, {holdout_mse_losses}')
                     break
             # print('epoch: {}, holdout mse losses: {}'.format(epoch, holdout_mse_losses))
-
 
     def plot_gym_results(self, X, Xrec, idx=0, show=False, fname='reconstructions.png'):
         tt = X.shape[1]
@@ -295,7 +293,7 @@ class EnsembleDynamicsModel():
             return False
 
     def predict(self, inputs, batch_size=1024, factored=True):
-        print(f'predicting {inputs.shape} state transitions')
+        print(f'predicting bnn {inputs.shape} state transitions')
         inputs = self.scaler.transform(inputs)
         ensemble_mean, ensemble_var = [], []
         for i in range(0, inputs.shape[0], batch_size):
@@ -324,43 +322,43 @@ class Swish(nn.Module):
         return x
 
 
-def get_data(inputs_file_path, labels_file_path, num_examples):
-    with open(inputs_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
-        bytestream.read(16)
-        buf = bytestream.read(28 * 28 * num_examples)
-        data = np.frombuffer(buf, dtype=np.uint8) / 255.0
-        inputs = data.reshape(num_examples, 784)
+# def get_data(inputs_file_path, labels_file_path, num_examples):
+#     with open(inputs_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
+#         bytestream.read(16)
+#         buf = bytestream.read(28 * 28 * num_examples)
+#         data = np.frombuffer(buf, dtype=np.uint8) / 255.0
+#         inputs = data.reshape(num_examples, 784)
+#
+#     with open(labels_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
+#         bytestream.read(8)
+#         buf = bytestream.read(num_examples)
+#         labels = np.frombuffer(buf, dtype=np.uint8)
+#
+#     return np.array(inputs, dtype=np.float32), np.array(labels, dtype=np.int8)
 
-    with open(labels_file_path, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
-        bytestream.read(8)
-        buf = bytestream.read(num_examples)
-        labels = np.frombuffer(buf, dtype=np.uint8)
 
-    return np.array(inputs, dtype=np.float32), np.array(labels, dtype=np.int8)
-
-
-def set_tf_weights(model, tf_weights):
-    print(tf_weights.keys())
-    pth_weights = {}
-    pth_weights['max_logvar'] = tf_weights['BNN/max_log_var:0']
-    pth_weights['min_logvar'] = tf_weights['BNN/min_log_var:0']
-    pth_weights['nn1.weight'] = tf_weights['BNN/Layer0/FC_weights:0']
-    pth_weights['nn1.bias'] = tf_weights['BNN/Layer0/FC_biases:0']
-    pth_weights['nn2.weight'] = tf_weights['BNN/Layer1/FC_weights:0']
-    pth_weights['nn2.bias'] = tf_weights['BNN/Layer1/FC_biases:0']
-    pth_weights['nn3.weight'] = tf_weights['BNN/Layer2/FC_weights:0']
-    pth_weights['nn3.bias'] = tf_weights['BNN/Layer2/FC_biases:0']
-    pth_weights['nn4.weight'] = tf_weights['BNN/Layer3/FC_weights:0']
-    pth_weights['nn4.bias'] = tf_weights['BNN/Layer3/FC_biases:0']
-    pth_weights['nn5.weight'] = tf_weights['BNN/Layer4/FC_weights:0']
-    pth_weights['nn5.bias'] = tf_weights['BNN/Layer4/FC_biases:0']
-    for name, param in model.ensemble_model.named_parameters():
-        if param.requires_grad:
-            # print(name)
-            print(param.data.shape, pth_weights[name].shape)
-            param.data = torch.FloatTensor(pth_weights[name]).to(device).reshape(param.data.shape)
-            pth_weights[name] = param.data
-            print(name)
+# def set_tf_weights(model, tf_weights):
+#     print(tf_weights.keys())
+#     pth_weights = {}
+#     pth_weights['max_logvar'] = tf_weights['BNN/max_log_var:0']
+#     pth_weights['min_logvar'] = tf_weights['BNN/min_log_var:0']
+#     pth_weights['nn1.weight'] = tf_weights['BNN/Layer0/FC_weights:0']
+#     pth_weights['nn1.bias'] = tf_weights['BNN/Layer0/FC_biases:0']
+#     pth_weights['nn2.weight'] = tf_weights['BNN/Layer1/FC_weights:0']
+#     pth_weights['nn2.bias'] = tf_weights['BNN/Layer1/FC_biases:0']
+#     pth_weights['nn3.weight'] = tf_weights['BNN/Layer2/FC_weights:0']
+#     pth_weights['nn3.bias'] = tf_weights['BNN/Layer2/FC_biases:0']
+#     pth_weights['nn4.weight'] = tf_weights['BNN/Layer3/FC_weights:0']
+#     pth_weights['nn4.bias'] = tf_weights['BNN/Layer3/FC_biases:0']
+#     pth_weights['nn5.weight'] = tf_weights['BNN/Layer4/FC_weights:0']
+#     pth_weights['nn5.bias'] = tf_weights['BNN/Layer4/FC_biases:0']
+#     for name, param in model.ensemble_model.named_parameters():
+#         if param.requires_grad:
+#             # print(name)
+#             print(param.data.shape, pth_weights[name].shape)
+#             param.data = torch.FloatTensor(pth_weights[name]).to(device).reshape(param.data.shape)
+#             pth_weights[name] = param.data
+#             print(name)
 
 
 def main():
