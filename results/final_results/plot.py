@@ -26,9 +26,6 @@ def main():
 			## load results
 			# data = pickle.load(open(fname, 'rb'))
 			data = pd.read_csv(fname, sep=',')
-			# df = pd.DataFrame(data)
-			# df.to_csv('{}_{}.csv'.format(task, alg), index=False)
-			## plot trial mean
 			plt.plot(data['x'], data['y'], linewidth=1.5, label=alg, c=colors[alg])
 			## plot error bars
 			plt.fill_between(data['x'], data['y']-data['std'], data['y']+data['std'], color=colors[alg], alpha=0.25)

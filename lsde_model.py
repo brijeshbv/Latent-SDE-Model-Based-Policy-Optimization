@@ -331,8 +331,8 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=8,
-                 context_size=8):
+    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=32,
+                 context_size=32):
         self.agent = agent
         self._snapshots = None
         self._state = None
@@ -345,7 +345,7 @@ class LatentSDEModel:
         self.action_size = action_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size // 2, context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size, context_size, hidden_size, action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -373,7 +373,7 @@ class LatentSDEModel:
         for ax in axs.ravel():
             if i >= D:
                 ax.set_axis_off()
-                break
+                continue
             ax.plot(range(0, tt), X[-tt:, i].detach().cpu().numpy(), 'r', label='target')
             ax.plot(range(lag, tt), Xrec[-tt:, i].detach().cpu().numpy(), 'b', label='prediction')
             ax.legend(loc='upper right')
