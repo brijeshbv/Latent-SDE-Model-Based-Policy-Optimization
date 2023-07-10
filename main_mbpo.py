@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=100, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=100, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=10, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -134,18 +134,17 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state_label = next_state - state
     global normalizer
+    if args.model_type == 'bnn':
+        inputs = np.concatenate((state, action), axis=-1)
+    else:
+        inputs = state
+    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state_label), axis=-1)
     if normalizer is None:
         normalizer = StandardScaler()
-        normalizer.fit(delta_state_label)
-    delta_state_label = normalizer.transform(delta_state_label)
-    inputs = state
-    print(f'training lsde model, {inputs.shape}')
-
-    predict_env.model_lsde.train(args, inputs, delta_state_label, action, total_step, holdout_ratio=0.2)
-
-    # inputs = np.concatenate((state, action), axis=-1)
-    # print(f'training bnn model, {inputs.shape}')
-    # predict_env.model_bnn.train(args, inputs, delta_state_label, total_step)
+        normalizer.fit(labels)
+    labels = normalizer.transform(labels)
+    print(f'training {args.model_type} model, {inputs.shape}')
+    predict_env.model.train(args, inputs, labels,action, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -325,19 +324,20 @@ def main(args=None):
     # Initial ensemble model
     state_size = np.prod(env.observation_space.shape)
     action_size = np.prod(env.action_space.shape)
-    if args.model_type == 'pytorch':
-        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+    if args.model_type == 'bnn':
+        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
                                           args.pred_hidden_size,
                                           use_decay=args.use_decay)
+        predict_env = PredictEnv(env_model, args.env_name, args.model_type)
     elif args.model_type == 'torchsde':
-        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, agent,
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, agent,
                                     args.pred_hidden_size)
-        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,
+        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
                                            args.pred_hidden_size,
                                            use_decay=args.use_decay)
 
     # Predict environments
-    predict_env = PredictEnv(env_model1, env_model2, args.env_name, args.model_type)
+        predict_env = PredictEnv(env_model1, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)

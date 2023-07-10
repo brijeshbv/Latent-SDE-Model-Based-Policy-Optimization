@@ -8,9 +8,8 @@ from matplotlib import pyplot as plt
 
 
 class PredictEnv:
-    def __init__(self, model_lsde, model_bnn, env_name, model_type):
-        self.model_lsde = model_lsde
-        self.model_bnn = model_bnn
+    def __init__(self, model, env_name, model_type):
+        self.model = model
         self.env_name = env_name
         self.model_type = model_type
 
@@ -101,7 +100,7 @@ class PredictEnv:
 
             xy_position_after = next_pos[:, 0:2]
             xy_velocity = (xy_position_after - xy_position_before) / 0.04
-            x_velocity, y_velocity = xy_velocity[:,0], xy_velocity[:,1]
+            x_velocity, y_velocity = xy_velocity[:, 0], xy_velocity[:, 1]
             forward_reward = 1 * x_velocity
             control_cost = ctrl_cost_weight * np.sum(np.square(action), axis=1)
             reward = forward_reward - control_cost
@@ -142,6 +141,7 @@ class PredictEnv:
         return reward
 
     def step(self, args, obs, act, total_step, normalizer):
+        global ensemble_model_op, model_idxes, batch_idxes
         if obs.shape[0] > args.rollout_batch_size:
             obs = obs[:args.rollout_batch_size]
             act = act[:args.rollout_batch_size]
@@ -153,41 +153,35 @@ class PredictEnv:
         else:
             return_single = False
 
-        ensemble_lsde_model_op, ensemble_model_input, ensemble_model_actions, first_pred = self.model_lsde.predict(args,
-                                                                                                                   obs,
-                                                                                                                   act,
-                                                                                                                   args.steps_to_predict,
-                                                                                                                   total_step,
-                                                                                                                   normalizer)
-        # inputs = np.concatenate((obs, act), axis=-1)
-        # ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
-        # print(f'bnn std deviation of prediction: {ensemble_model_vars_bnn.mean(axis=(0, 1))}')
-
-        # ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
-        # ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
-        #     size=ensemble_model_means_bnn.shape) * ensemble_model_stds
-
-        # if total_step % 250 == 0:
-        #     self.plt_predictions(first_pred[:, :, :args.rollout_batch_size], ensemble_samples_bnn[:, :, :],
-        #                          fname=f'results/{args.resdir}/prediction_{total_step}')
-        # ensemble_samples_bnn = normalizer.inverse_transform(ensemble_samples_bnn)
-        # ensemble_samples_bnn += obs
-        num_models, batch_size, _ = ensemble_lsde_model_op.shape
-        model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
+        if args.model_type == 'bnn':
+            inputs = np.concatenate((obs, act), axis=-1)
+            ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model.predict(inputs)
+            ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
+            ensemble_model_op = ensemble_model_means_bnn + np.random.normal(
+                size=ensemble_model_means_bnn.shape) * ensemble_model_stds
+            ensemble_model_op = normalizer.inverse_transform(ensemble_model_op)
+            ensemble_model_op[:, :, 1:] += obs
+            num_models, batch_size, _ = ensemble_model_op.shape
+            model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
+        elif args.model_type == 'torchsde':
+            ensemble_model_op, ensemble_model_input, ensemble_model_actions, first_pred = self.model.predict(args, obs,
+                                                                                                             act,
+                                                                                                             args.steps_to_predict,
+                                                                                                             total_step,
+                                                                                                             normalizer)
+            num_models, batch_size, _ = ensemble_model_op.shape
+            model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
+            batch_idxes = np.arange(0, batch_size)
+            obs = ensemble_model_input[model_idxes, batch_idxes]
+            act = ensemble_model_actions[model_idxes, batch_idxes]
 
         batch_idxes = np.arange(0, batch_size)
+        samples = ensemble_model_op[model_idxes, batch_idxes]
 
-        samples = ensemble_lsde_model_op[model_idxes, batch_idxes]
-        obs = ensemble_model_input[model_idxes, batch_idxes]
-        act = ensemble_model_actions[model_idxes, batch_idxes]
-        model_means = ensemble_lsde_model_op[model_idxes, batch_idxes]
-
-        # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
-        # todo to convert back to lsde, remove 1
-        next_obs = samples[:, :]
-        rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
+        next_obs = samples[:, 1:]
+        rewards = samples[:, 0].reshape((samples.shape[0], -1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
-        return_means = np.concatenate((model_means[:, :], terminals, model_means[:, :]), axis=-1)
+        return_means = np.concatenate((samples[:, :], terminals, samples[:, :]), axis=-1)
 
         if return_single:
             next_obs = next_obs[0]
@@ -195,8 +189,8 @@ class PredictEnv:
             rewards = rewards[0]
             terminals = terminals[0]
         info = {'mean': return_means, }
-        print('lsde is being used for predict')
-        return obs, next_obs, rewards, terminals,act,  info
+        print(f'{args.model_type} is being used for prediction')
+        return obs, next_obs, rewards, terminals, act, info
 
     def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50

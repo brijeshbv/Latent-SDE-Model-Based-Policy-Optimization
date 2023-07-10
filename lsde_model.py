@@ -149,23 +149,18 @@ def init_weights(m):
 
 class Projector(nn.Module):
 
-    def __init__(self, data_size, latent_size, hidden_size, network_size):
+    def __init__(self, out_size, latent_size, hidden_size, network_size):
         super(Projector, self).__init__()
-        self.data_size = data_size
+        self.out_size = out_size
         self.lin = nn.Sequential(
             EnsembleFC(latent_size, hidden_size, network_size),
             nn.Sigmoid(),
-            EnsembleFC(hidden_size, data_size, network_size)
+            EnsembleFC(hidden_size, out_size, network_size)
         )
-        self.max_logvar = nn.Parameter((torch.ones((1, self.data_size)).float() / 2).to(device), requires_grad=False)
-        self.min_logvar = nn.Parameter((-torch.ones((1, self.data_size)).float() * 10).to(device), requires_grad=False)
 
     def forward(self, inp):
         out = self.lin(inp)
         mean = out[:, :, :]
-        # logvar = self.max_logvar - F.softplus(self.max_logvar - out[:, :, self.data_size:])
-        # logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
-        # , torch.exp(logvar)
         return mean
 
 
@@ -173,7 +168,7 @@ class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, context_size, hidden_size, action_dim, network_size, t0=0,
+    def __init__(self, data_size, latent_size, reward_size, context_size, hidden_size, action_dim, network_size, t0=0,
                  skip_every=1,
                  t1=1, dt=0.5):
         super(LatentSDE, self).__init__()
@@ -216,7 +211,7 @@ class LatentSDE(nn.Module):
             ]
         )
 
-        self.projector = Projector(data_size, latent_size, hidden_size, network_size)
+        self.projector = Projector(data_size + reward_size, latent_size, hidden_size, network_size)
         latent_and_action_size = latent_size + action_dim
         self.action_encode_net = nn.Sequential(
             EnsembleFC(latent_and_action_size, latent_size, network_size))
@@ -331,7 +326,7 @@ class LatentSDE(nn.Module):
 
 
 class LatentSDEModel:
-    def __init__(self, network_size, elite_size, state_size, action_size, agent, hidden_size=32,
+    def __init__(self, network_size, elite_size, state_size, action_size, reward_size, agent, hidden_size=32,
                  context_size=32):
         self.agent = agent
         self._snapshots = None
@@ -343,9 +338,11 @@ class LatentSDEModel:
         self.model_list = []
         self.state_size = state_size
         self.action_size = action_size
+        self.reward_size = reward_size
         self.network_size = network_size
         self.elite_model_idxes = []
-        self.ensemble_model = LatentSDE(state_size, state_size, context_size, hidden_size, action_size,
+        self.ensemble_model = LatentSDE(state_size, state_size // 2, reward_size, context_size, hidden_size,
+                                        action_size,
                                         self.network_size)
         self.state_scaler = StandardScaler()
         self.action_scaler = StandardScaler()
@@ -384,7 +381,7 @@ class LatentSDEModel:
         if show is False:
             plt.close()
 
-    def train(self, args, inputs, labels, actions, total_step, batch_size=256, holdout_ratio=0.,
+    def train(self, args, inputs, labels, actions, total_step, holdout_ratio=0.2,
               max_epochs_since_update=10):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
@@ -491,9 +488,9 @@ class LatentSDEModel:
         model_actions = actions.reshape(
             (1, actions.shape[0], actions.shape[1], actions.shape[2])).detach().cpu().numpy()
         model_ip = inputs.reshape((1, inputs.shape[0], inputs.shape[1], inputs.shape[2])).detach().cpu().numpy()
-        model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
+        model_op = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2] + args.reward_size),
                                dtype=torch.float32).detach().cpu()
-        first_preds = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2]),
+        first_preds = torch.empty((0, inputs.shape[0], inputs.shape[1], inputs.shape[2] + args.reward_size),
                                   dtype=torch.float32).detach().cpu()
         for i in range(steps_to_predict):
             _, step_op_mean = self.ensemble_model(inputs_norm, actions_norm)
@@ -501,8 +498,8 @@ class LatentSDEModel:
             first_pred = step_op
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
 
-            step_op = np.add(step_op, inputs.detach().cpu())
-            inputs = step_op
+            step_op[:, :, 1:] = np.add(step_op[:, :, 1:], inputs.detach().cpu())
+            inputs = step_op[:, :, 1:]
             inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32)
             actions = self.agent.select_action(inputs.detach().cpu())
             actions_norm = torch.asarray(self.action_scaler.transform(actions))
@@ -512,7 +509,7 @@ class LatentSDEModel:
             actions_norm = actions_norm.reshape((num_nets, og_batches, -1)).to(device)
             actions = actions.reshape((num_nets, og_batches, -1))
             model_op = np.concatenate(
-                (model_op, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
+                (model_op, step_op.reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
                 axis=0)
             first_preds = np.concatenate(
                 (first_preds,
@@ -520,7 +517,7 @@ class LatentSDEModel:
                 axis=0)
             if i < steps_to_predict - 1:
                 model_ip = np.concatenate(
-                    (model_ip, step_op.detach().cpu().reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2])),
+                    (model_ip, step_op[:, :, 1:].reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2]-1)),
                     axis=0)
                 model_actions = np.concatenate(
                     (model_actions, actions.reshape(1, actions.shape[0], actions.shape[1], actions.shape[2])),
@@ -529,6 +526,7 @@ class LatentSDEModel:
         num_steps, ensemb, batch, dim = model_op.shape
         model_op = model_op.reshape((ensemb, num_steps * batch, dim))
         first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
+        num_steps, ensemb, batch, dim = model_ip.shape
         model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
         num_steps, ensemb, batch, dim = model_actions.shape
         model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))

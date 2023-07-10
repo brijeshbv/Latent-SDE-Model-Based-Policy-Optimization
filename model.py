@@ -115,7 +115,7 @@ class EnsembleFC(nn.Module):
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, state_size, action_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
+    def __init__(self, state_size, action_size, reward_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
         super(EnsembleModel, self).__init__()
         self.hidden_size = hidden_size
         self.nn1 = EnsembleFC(state_size + action_size, hidden_size, ensemble_size, weight_decay=0.000025)
@@ -124,7 +124,7 @@ class EnsembleModel(nn.Module):
         self.nn4 = EnsembleFC(hidden_size, hidden_size, ensemble_size, weight_decay=0.000075)
         self.use_decay = use_decay
 
-        self.output_dim = state_size
+        self.output_dim = state_size + reward_size
         # Add variance output
         self.nn5 = EnsembleFC(hidden_size, self.output_dim * 2, ensemble_size, weight_decay=0.0001)
 
@@ -192,15 +192,16 @@ class EnsembleModel(nn.Module):
 
 
 class EnsembleDynamicsModel():
-    def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=200, use_decay=False):
+    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
         self.model_list = []
         self.state_size = state_size
         self.action_size = action_size
         self.network_size = network_size
+        self.reward_size = reward_size
         self.elite_model_idxes = []
-        self.ensemble_model = EnsembleModel(state_size, action_size, network_size, hidden_size, use_decay=use_decay)
+        self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
         self.scaler = StandardScaler()
 
     def train(self, args, inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
