@@ -65,9 +65,9 @@ def readParser():
     parser.add_argument('--model_train_freq', type=int, default=250, metavar='A',
                         help='frequency of training')
     # todo rollout_batch_size replay size 10000, 65536
-    parser.add_argument('--rollout_batch_size', type=int, default=100, metavar='A',
+    parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=10, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=100, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -332,9 +332,6 @@ def main(args=None):
     elif args.model_type == 'torchsde':
         env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, agent,
                                     args.pred_hidden_size)
-        env_model2 = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
-                                           args.pred_hidden_size,
-                                           use_decay=args.use_decay)
 
     # Predict environments
         predict_env = PredictEnv(env_model1, args.env_name, args.model_type)

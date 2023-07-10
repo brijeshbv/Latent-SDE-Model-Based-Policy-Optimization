@@ -17,7 +17,7 @@ import math
 import torch.nn.functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-font = {'family': 'normal',
+font = {
         'size': 40}
 
 matplotlib.rc('font', **font)
