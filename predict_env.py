@@ -160,7 +160,7 @@ class PredictEnv:
             ensemble_model_op = ensemble_model_means_bnn + np.random.normal(
                 size=ensemble_model_means_bnn.shape) * ensemble_model_stds
             ensemble_model_op = normalizer.inverse_transform(ensemble_model_op)
-            ensemble_model_op[:, :, 1:] += obs
+            ensemble_model_op[:, :, :-1] += obs
             num_models, batch_size, _ = ensemble_model_op.shape
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
         elif args.model_type == 'torchsde':
@@ -178,8 +178,8 @@ class PredictEnv:
         batch_idxes = np.arange(0, batch_size)
         samples = ensemble_model_op[model_idxes, batch_idxes]
 
-        next_obs = samples[:, 1:]
-        rewards = samples[:, 0].reshape((samples.shape[0], -1))
+        next_obs = samples[:, :-1]
+        rewards = samples[:, -1].reshape((samples.shape[0], -1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
         return_means = np.concatenate((samples[:, :], terminals, samples[:, :]), axis=-1)
 

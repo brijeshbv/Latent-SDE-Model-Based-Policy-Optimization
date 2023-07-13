@@ -138,7 +138,7 @@ def train_predict_model(args, env_pool, predict_env, total_step):
         inputs = np.concatenate((state, action), axis=-1)
     else:
         inputs = state
-    labels = np.concatenate((np.reshape(reward, (reward.shape[0], -1)), delta_state_label), axis=-1)
+    labels = np.concatenate((delta_state_label, (np.reshape(reward, (reward.shape[0], -1)))), axis=-1)
     if normalizer is None:
         normalizer = StandardScaler()
         normalizer.fit(labels)

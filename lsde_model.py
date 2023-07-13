@@ -498,8 +498,8 @@ class LatentSDEModel:
             first_pred = step_op
             step_op = normalizer.inverse_transform(step_op.detach().cpu().numpy())
 
-            step_op[:, :, 1:] = np.add(step_op[:, :, 1:], inputs.detach().cpu())
-            inputs = step_op[:, :, 1:]
+            step_op[:, :, :-1] = np.add(step_op[:, :, :-1], inputs.detach().cpu())
+            inputs = step_op[:, :, :-1]
             inputs = torch.asarray(inputs.reshape((num_nets * og_batches, -1)), dtype=torch.float32)
             actions = self.agent.select_action(inputs.detach().cpu())
             actions_norm = torch.asarray(self.action_scaler.transform(actions))
@@ -517,7 +517,7 @@ class LatentSDEModel:
                 axis=0)
             if i < steps_to_predict - 1:
                 model_ip = np.concatenate(
-                    (model_ip, step_op[:, :, 1:].reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2]-1)),
+                    (model_ip, step_op[:, :, :-1].reshape(1, step_op.shape[0], step_op.shape[1], step_op.shape[2]-1)),
                     axis=0)
                 model_actions = np.concatenate(
                     (model_actions, actions.reshape(1, actions.shape[0], actions.shape[1], actions.shape[2])),
