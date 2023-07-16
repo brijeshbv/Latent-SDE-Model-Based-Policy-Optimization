@@ -37,6 +37,12 @@ class ReplayMemory:
         state, action, reward, next_state, done = map(np.stack, zip(*batch))
         return state, action, reward, next_state, done
 
+    def sample_model(self, batch_size):
+        if batch_size > len(self.buffer):
+            batch_size = len(self.buffer)
+        batch = random.sample(self.buffer, int(batch_size))
+        state, action, reward, next_state, done, log_prob = map(np.stack, zip(*batch))
+        return state, action, reward, next_state, done, log_prob
     def sample_all_batch(self, batch_size):
         idxes = np.random.randint(0, len(self.buffer), batch_size)
         batch = list(itemgetter(*idxes)(self.buffer))
@@ -44,6 +50,14 @@ class ReplayMemory:
         if state.shape[0] > batch_size:
             print(f'sampling more than needed batch size')
         return state, action, reward, next_state, done
+
+    def sample_all_model_batch(self, batch_size):
+        idxes = np.random.randint(0, len(self.buffer), batch_size)
+        batch = list(itemgetter(*idxes)(self.buffer))
+        state, action, reward, next_state, done, log_prob = map(np.stack, zip(*batch))
+        if state.shape[0] > batch_size:
+            print(f'sampling more than needed batch size')
+        return state, action, reward, next_state, done, log_prob
 
     def return_all(self):
         return self.buffer

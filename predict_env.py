@@ -2,16 +2,19 @@ import numpy
 import numpy as np
 import matplotlib
 import torch
-
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+from torch.distributions import Normal
 
+epsilon = 1e-6
 
 class PredictEnv:
     def __init__(self, model, env_name, model_type):
         self.model = model
         self.env_name = env_name
         self.model_type = model_type
+        self.state_scale = torch.tensor(1.)
+
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
@@ -155,12 +158,16 @@ class PredictEnv:
 
         if args.model_type == 'bnn':
             inputs = np.concatenate((obs, act), axis=-1)
-            ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model.predict(inputs)
+            ensemble_model_means_bnn, ensemble_model_vars_bnn, ensemble_rewards = self.model.predict(inputs)
             ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
-            ensemble_model_op = ensemble_model_means_bnn + np.random.normal(
-                size=ensemble_model_means_bnn.shape) * ensemble_model_stds
-            ensemble_model_op = normalizer.inverse_transform(ensemble_model_op)
-            ensemble_model_op[:, :, :-1] += obs
+            ensemble_model_means_bnn, ensemble_model_stds = torch.tensor(ensemble_model_means_bnn), torch.tensor(ensemble_model_stds)
+            ensemble_normal = Normal(ensemble_model_means_bnn, ensemble_model_stds)
+            ensemble_model_op = ensemble_normal.rsample()
+            y_t = torch.tanh(ensemble_model_op)
+            ensemble_log_prob = ensemble_normal.log_prob(ensemble_model_op)
+            ensemble_log_prob = ensemble_log_prob - torch.log(self.state_scale * (1 - y_t.pow(2)) + epsilon)
+            ensemble_log_prob = ensemble_log_prob.sum(2, keepdim=True)
+            ensemble_model_op += obs
             num_models, batch_size, _ = ensemble_model_op.shape
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
         elif args.model_type == 'torchsde':
@@ -169,6 +176,7 @@ class PredictEnv:
                                                                                                              args.steps_to_predict,
                                                                                                              total_step,
                                                                                                              normalizer)
+            ensemble_model_op = normalizer.inverse_transform(ensemble_model_op)
             num_models, batch_size, _ = ensemble_model_op.shape
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
             batch_idxes = np.arange(0, batch_size)
@@ -176,12 +184,13 @@ class PredictEnv:
             act = ensemble_model_actions[model_idxes, batch_idxes]
 
         batch_idxes = np.arange(0, batch_size)
-        samples = ensemble_model_op[model_idxes, batch_idxes]
+        log_prob = ensemble_log_prob[model_idxes, batch_idxes]
+        next_obs = ensemble_model_op[model_idxes, batch_idxes]
+        rewards = ensemble_rewards[model_idxes, batch_idxes]
 
-        next_obs = samples[:, :-1]
-        rewards = samples[:, -1].reshape((samples.shape[0], -1))
+        rewards = rewards.reshape((next_obs.shape[0], -1))
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
-        return_means = np.concatenate((samples[:, :], terminals, samples[:, :]), axis=-1)
+        return_means = np.concatenate((next_obs[:, :], terminals, next_obs[:, :]), axis=-1)
 
         if return_single:
             next_obs = next_obs[0]
@@ -190,7 +199,7 @@ class PredictEnv:
             terminals = terminals[0]
         info = {'mean': return_means, }
         print(f'{args.model_type} is being used for prediction')
-        return obs, next_obs, rewards, terminals, act, info
+        return obs, next_obs, rewards, terminals, act, info, log_prob
 
     def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50

@@ -4,17 +4,17 @@ if torch.cuda.is_available():
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 import numpy as np
-import math
-import gzip
+
 import itertools
+from torch.distributions import Normal
 import matplotlib
+
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+epsilon = 1e-6
 num_train = 60000  # 60k train examples
 num_test = 10000  # 10k test examples
 train_inputs_file_path = './MNIST_data/train-images-idx3-ubyte.gz'
@@ -39,8 +39,8 @@ class StandardScaler(object):
 
         Returns: None.
         """
-        self.mu = np.mean(data, axis=0, keepdims=True)
-        self.std = np.std(data, axis=0, keepdims=True)
+        self.mu = torch.mean(data, dim=(0, 1))
+        self.std = torch.std(data, dim=(0, 1))
         self.std[self.std < 1e-12] = 1.0
 
     def transform(self, data):
@@ -115,7 +115,8 @@ class EnsembleFC(nn.Module):
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, state_size, action_size, reward_size, ensemble_size, hidden_size=200, learning_rate=1e-3, use_decay=False):
+    def __init__(self, state_size, action_size, reward_size, ensemble_size, hidden_size=200, learning_rate=1e-3,
+                 use_decay=False):
         super(EnsembleModel, self).__init__()
         self.hidden_size = hidden_size
         self.nn1 = EnsembleFC(state_size + action_size, hidden_size, ensemble_size, weight_decay=0.000025)
@@ -160,7 +161,7 @@ class EnsembleModel(nn.Module):
                 # print(m, decay_loss, m.weight_decay)
         return decay_loss
 
-    def loss(self, mean, logvar, labels, inc_var_loss=True):
+    def loss(self, mean, logvar, labels, q_value, log_prob, beta, inc_var_loss=True):
         """
         mean, logvar: Ensemble_size x N x dim
         labels: N x dim
@@ -169,9 +170,10 @@ class EnsembleModel(nn.Module):
         inv_var = torch.exp(-logvar)
         if inc_var_loss:
             # Average over batch and dim, sum over ensembles.
+            kl_loss = torch.mean((beta * log_prob) - q_value)
             mse_loss = torch.mean(torch.mean(torch.pow(mean - labels, 2) * inv_var, dim=-1), dim=-1)
             var_loss = torch.mean(torch.mean(logvar, dim=-1), dim=-1)
-            total_loss = torch.sum(mse_loss) + torch.sum(var_loss)
+            total_loss = torch.sum(mse_loss) + torch.sum(var_loss) + torch.sum(kl_loss)
         else:
             mse_loss = torch.mean(torch.pow(mean - labels, 2), dim=(1, 2))
             total_loss = torch.sum(mse_loss)
@@ -191,8 +193,9 @@ class EnsembleModel(nn.Module):
         self.optimizer.step()
 
 
-class EnsembleDynamicsModel():
-    def __init__(self, network_size, elite_size, state_size, action_size, reward_size=1, hidden_size=200, use_decay=False):
+class EnsembleDynamicsModel:
+    def __init__(self, network_size, elite_size, state_size, action_size, agent_network, reward_size=1, hidden_size=200,
+                 use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
         self.model_list = []
@@ -200,11 +203,15 @@ class EnsembleDynamicsModel():
         self.action_size = action_size
         self.network_size = network_size
         self.reward_size = reward_size
+        self.agent_network = agent_network
         self.elite_model_idxes = []
-        self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size, use_decay=use_decay)
+        self.ensemble_model = EnsembleModel(state_size, action_size, reward_size, network_size, hidden_size,
+                                            use_decay=use_decay)
         self.scaler = StandardScaler()
+        self.state_scale = torch.tensor(1.)
 
-    def train(self, args, inputs, labels, epoch_step, batch_size=256, holdout_ratio=0.2, max_epochs_since_update=5):
+    def train(self, args, inputs, labels, actions, epoch_step, batch_size=256, holdout_ratio=0.2,
+              max_epochs_since_update=5):
         self._max_epochs_since_update = max_epochs_since_update
         self._epochs_since_update = 0
         self._state = {}
@@ -212,19 +219,17 @@ class EnsembleDynamicsModel():
 
         num_holdout = int(inputs.shape[0] * holdout_ratio)
         permutation = np.random.permutation(inputs.shape[0])
-        inputs, labels = inputs[permutation], labels[permutation]
+        inputs, labels, actions = inputs[permutation], labels[permutation], actions[permutation]
 
-        train_inputs, train_labels = inputs[num_holdout:], labels[num_holdout:]
-        holdout_inputs, holdout_labels = inputs[:num_holdout], labels[:num_holdout]
-
-        self.scaler.fit(train_inputs)
-        train_inputs = self.scaler.transform(train_inputs)
-        holdout_inputs = self.scaler.transform(holdout_inputs)
-
+        train_inputs, train_labels, train_actions = inputs[num_holdout:], labels[num_holdout:], actions[num_holdout:]
+        holdout_inputs, holdout_labels, holdout_actions = inputs[:num_holdout], labels[:num_holdout], actions[
+                                                                                                      :num_holdout]
         holdout_inputs = torch.from_numpy(holdout_inputs).float().to(device)
         holdout_labels = torch.from_numpy(holdout_labels).float().to(device)
+        holdout_actions = torch.from_numpy(holdout_actions).float().to(device)
         holdout_inputs = holdout_inputs[None, :, :].repeat([self.network_size, 1, 1])
         holdout_labels = holdout_labels[None, :, :].repeat([self.network_size, 1, 1])
+        holdout_actions = holdout_actions[None, :, :].repeat([self.network_size, 1, 1])
         print(f'training bnn model, train_size : {train_inputs.shape}')
         for epoch in itertools.count():
 
@@ -234,24 +239,62 @@ class EnsembleDynamicsModel():
                 idx = train_idx[:, start_pos: start_pos + batch_size]
                 train_input = torch.from_numpy(train_inputs[idx]).float().to(device)
                 train_label = torch.from_numpy(train_labels[idx]).float().to(device)
+                train_action = torch.from_numpy(train_actions[idx]).float().to(device)
                 losses = []
-                mean, logvar = self.ensemble_model(train_input, ret_log_var=True)
-                loss, _ = self.ensemble_model.loss(mean, logvar, train_label)
+                train_input_combined = torch.cat((train_input, train_action), dim=-1)
+                self.scaler.fit(train_input_combined)
+                train_input_combined = self.scaler.transform(train_input_combined)
+                mean, logvar = self.ensemble_model(train_input_combined, ret_log_var=True)
+                with torch.no_grad():
+                    state_mean, state_logvar = mean[:, :, :-1], logvar[:, :, :-1]
+                    state_stds = torch.sqrt(state_logvar.exp())
+                    normal = Normal(state_mean, state_stds)
+                    model_op = normal.rsample()
+                    state_log_prob = normal.log_prob(model_op)
+                    y_t = torch.tanh(model_op)
+                    state_log_prob = state_log_prob - torch.log(self.state_scale * (1 - y_t.pow(2)) + epsilon)
+                    state_log_prob = state_log_prob.sum(2, keepdim=True)
+                    qf1_pi, qf2_pi = torch.empty(size=(train_action.shape[0], train_action.shape[1], 1)), \
+                        torch.empty(size=(train_action.shape[0], train_action.shape[1], 1))
+                    for i in range(train_action.shape[0]):
+                        qf1_pi[i], qf2_pi[i] = self.agent_network.critic(train_input[i], train_action[i])
+                    min_qf_pi = torch.min(qf1_pi, qf2_pi)
+                beta = args.beta
+                loss, _ = self.ensemble_model.loss(mean, logvar, train_label, min_qf_pi, state_log_prob, beta)
                 self.ensemble_model.train(loss)
                 losses.append(loss)
 
             with torch.no_grad():
-                holdout_mean, holdout_logvar = self.ensemble_model(holdout_inputs, ret_log_var=True)
+                holdout_input_combined = torch.cat((holdout_inputs, holdout_actions), dim=-1)
+                holdout_input_combined = self.scaler.transform(holdout_input_combined)
+                holdout_mean, holdout_logvar = self.ensemble_model(holdout_input_combined, ret_log_var=True)
                 predictions = holdout_mean + holdout_logvar.exp() * torch.randn_like(holdout_mean)
+                holdout_state_mean, holdout_state_logvar = holdout_mean[:, :, :-1], holdout_logvar[:, :, :-1]
+                holdout_state_stds = torch.sqrt(holdout_state_logvar.exp())
+                holdout_normal = Normal(holdout_state_mean, holdout_state_stds)
+                holdout_model_op = holdout_normal.rsample()
+                holdout_log_prob = holdout_normal.log_prob(holdout_model_op)
+                y_t = torch.tanh(holdout_model_op)
+                holdout_log_prob = holdout_log_prob - torch.log(self.state_scale * (1 - y_t.pow(2)) + epsilon)
+                holdout_log_prob = holdout_log_prob.sum(2, keepdim=True)
+                with torch.no_grad():
+                    qf1_pi, qf2_pi = torch.empty(
+                        size=(holdout_inputs.shape[0], holdout_inputs.shape[1], 1)), torch.empty(
+                        size=(holdout_inputs.shape[0], holdout_inputs.shape[1], 1))
+                    for i in range(holdout_inputs.shape[0]):
+                        qf1_pi[i], qf2_pi[i] = self.agent_network.critic(holdout_inputs[i], holdout_actions[i])
+                min_qf_pi = torch.min(qf1_pi, qf2_pi)
+                beta = args.beta
                 _, holdout_mse_losses = self.ensemble_model.loss(holdout_mean, holdout_logvar, holdout_labels,
+                                                                 min_qf_pi, holdout_log_prob, beta,
                                                                  inc_var_loss=True)
                 holdout_mse_losses = holdout_mse_losses.detach().cpu().numpy()
                 sorted_loss_idx = np.argsort(holdout_mse_losses)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_losses)
                 if break_train:
-                    if epoch_step % 250 == 0:
-                        self.plot_gym_results(holdout_inputs[:, :50, : self.state_size],
+                    if epoch_step % 500 == 0:
+                        self.plot_gym_results(holdout_labels[:, :50, :],
                                               predictions[:, :50, :],
                                               fname=f'results/{args.resdir}/bnn_step_{epoch_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_losses}')
@@ -295,23 +338,27 @@ class EnsembleDynamicsModel():
 
     def predict(self, inputs, batch_size=1024, factored=True):
         print(f'predicting bnn {inputs.shape} state transitions')
-        inputs = self.scaler.transform(inputs)
         ensemble_mean, ensemble_var = [], []
         for i in range(0, inputs.shape[0], batch_size):
             input = torch.from_numpy(inputs[i:min(i + batch_size, inputs.shape[0])]).float().to(device)
-            b_mean, b_var = self.ensemble_model(input[None, :, :].repeat([self.network_size, 1, 1]), ret_log_var=False)
+            input = input[None, :, :].repeat([self.network_size, 1, 1])
+            input = self.scaler.transform(input)
+            b_mean, b_var = self.ensemble_model(input, ret_log_var=False)
             ensemble_mean.append(b_mean.detach().cpu().numpy())
             ensemble_var.append(b_var.detach().cpu().numpy())
         ensemble_mean = np.hstack(ensemble_mean)
         ensemble_var = np.hstack(ensemble_var)
-
+        ensemble_mean_state = ensemble_mean[:, :, :-1]
+        ensemble_var_state = ensemble_var[:, :, :-1]
+        ensemble_rewards = ensemble_mean[:, :, -1] + np.random.normal(
+            size=(ensemble_mean.shape[0], ensemble_mean.shape[1])) * ensemble_var[:, :, -1]
         if factored:
-            return ensemble_mean, ensemble_var
+            return ensemble_mean_state, ensemble_var_state, ensemble_rewards
         else:
             assert False, "Need to transform to numpy"
             mean = torch.mean(ensemble_mean, dim=0)
             var = torch.mean(ensemble_var, dim=0) + torch.mean(torch.square(ensemble_mean - mean[None, :, :]), dim=0)
-            return mean, var
+            return mean, var, ensemble_rewards
 
 
 class Swish(nn.Module):

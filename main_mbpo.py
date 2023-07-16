@@ -7,7 +7,6 @@ from itertools import count
 import tqdm
 import logging
 
-
 import wandb
 
 from sac.replay_memory import ReplayMemory
@@ -18,6 +17,7 @@ from sample_env import EnvSampler
 from lsde_model import LatentSDEModel, StandardScaler
 
 normalizer = None
+
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -34,7 +34,10 @@ def readParser():
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                         help='target smoothing coefficient(τ) (default: 0.005)')
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
-                        help='Temperature parameter α determines the relative importance of the entropy\
+                        help='Temperature parameter α determines the relative importance of the action entropy\
+                            term against the reward (default: 0.2)')
+    parser.add_argument('--beta', type=float, default=0.2, metavar='G',
+                        help='Temperature parameter beta determines the relative importance of the state entropy\
                             term against the reward (default: 0.2)')
     parser.add_argument('--policy', default="Gaussian",
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
@@ -42,6 +45,8 @@ def readParser():
                         help='Value target update per no. of updates per step (default: 1)')
     parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, metavar='G',
                         help='Automaically adjust α (default: False)')
+    parser.add_argument('--automatic_state_entropy_tuning', type=bool, default=False, metavar='G',
+                        help='Automaically adjust beta (default: False)')
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
@@ -134,17 +139,16 @@ def train_predict_model(args, env_pool, predict_env, total_step):
     state, action, reward, next_state, done = env_pool.sample(len(env_pool))
     delta_state_label = next_state - state
     global normalizer
-    if args.model_type == 'bnn':
-        inputs = np.concatenate((state, action), axis=-1)
-    else:
-        inputs = state
+
+    inputs = state
     labels = np.concatenate((delta_state_label, (np.reshape(reward, (reward.shape[0], -1)))), axis=-1)
-    if normalizer is None:
-        normalizer = StandardScaler()
-        normalizer.fit(labels)
-    labels = normalizer.transform(labels)
+    if args.model_type == 'torchsde':
+        if normalizer is None:
+            normalizer = StandardScaler()
+            normalizer.fit(labels)
+        labels = normalizer.transform(labels)
     print(f'training {args.model_type} model, {inputs.shape}')
-    predict_env.model.train(args, inputs, labels,action, total_step)
+    predict_env.model.train(args, inputs, labels, action, total_step)
 
 
 def resize_model_pool(args, rollout_length, model_pool):
@@ -164,10 +168,13 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        state, next_states, rewards, terminals,action, info = predict_env.step(args, state, action, total_step, normalizer)
+        state, next_states, rewards, terminals, action, info, next_state_log_prob = predict_env.step(args, state,
+                                                                                                     action, total_step,
+                                                                                                     normalizer)
         # TODO: Push a batch of samples
         model_pool.push_batch(
-            [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
+            [(state[j], action[j], rewards[j], next_states[j], terminals[j], next_state_log_prob[j]) for j in
+             range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
         if nonterm_mask.sum() == 0:
             break
@@ -188,25 +195,29 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
         env_state, env_action, env_reward, env_next_state, env_done = env_pool.sample(int(env_batch_size))
 
         if model_batch_size > 0 and len(model_pool) > 0:
-            model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(
+            # log_next_state_transition_batch
+            batch_state, batch_action, batch_reward, batch_next_state, batch_done, log_next_state_transition_batch = model_pool.sample_all_model_batch(
                 int(model_batch_size))
-            batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate(
-                (env_state, model_state), axis=0), \
-                np.concatenate(
-                    (env_action, model_action),
-                    axis=0), np.concatenate(
-                (np.reshape(env_reward, (env_reward.shape[0], -1)), model_reward), axis=0), \
-                np.concatenate((env_next_state,
-                                model_next_state),
-                               axis=0), np.concatenate(
-                (np.reshape(env_done, (env_done.shape[0], -1)), model_done), axis=0)
+            # batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate(
+            #     (env_state, model_state), axis=0), \
+            #     np.concatenate(
+            #         (env_action, model_action),
+            #         axis=0), np.concatenate(
+            #     (np.reshape(env_reward, (env_reward.shape[0], -1)), model_reward), axis=0), \
+            #     np.concatenate((env_next_state,
+            #                     model_next_state),
+            #                    axis=0), np.concatenate(
+            #     (np.reshape(env_done, (env_done.shape[0], -1)), model_done), axis=0)
         else:
             batch_state, batch_action, batch_reward, batch_next_state, batch_done = env_state, env_action, env_reward, env_next_state, env_done
+            log_next_state_transition_batch = np.ones(shape=(batch_reward.shape[0], 1))
 
         batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
         batch_done = (~batch_done).astype(int)
-        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done),
-                                args.policy_train_batch_size, i)
+        # , log_next_state_transition_batch
+        agent.update_parameters(
+            (batch_state, batch_action, batch_reward, batch_next_state, batch_done, log_next_state_transition_batch),
+            args.policy_train_batch_size, i)
 
     return args.num_train_repeat
 
@@ -300,13 +311,7 @@ def main(args=None):
         wandb.init(project='lsde-mbrl')
 
 
-    # Initial environment
-    if args.env_name == 'InvertedPendulum-v4':
-        env = gym.make(args.env_name)
-    else:
-        env = gym.make(args.env_name,
-                       exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
-
+    env = gym.make(args.env_name)
 
 
     # Set random seed
@@ -314,10 +319,6 @@ def main(args=None):
     np.random.seed(args.seed)
     # env.seed(args.seed)
     observation_space_shape_sac = env.observation_space.shape[0]
-    if args.env_name == "Hopper-v4" :
-        observation_space_shape_sac -= 1
-    if args.env_name == "Swimmer-v4":
-        observation_space_shape_sac -= 2
     # Initial agent
     agent = SAC(observation_space_shape_sac, env.action_space, args)
 
@@ -325,15 +326,16 @@ def main(args=None):
     state_size = np.prod(env.observation_space.shape)
     action_size = np.prod(env.action_space.shape)
     if args.model_type == 'bnn':
-        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
+        env_model = EnsembleDynamicsModel(args.num_networks, args.num_elites, state_size, action_size,agent, args.reward_size,
                                           args.pred_hidden_size,
                                           use_decay=args.use_decay)
         predict_env = PredictEnv(env_model, args.env_name, args.model_type)
     elif args.model_type == 'torchsde':
-        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size, agent,
+        env_model1 = LatentSDEModel(args.num_networks, args.num_elites, state_size, action_size, args.reward_size,
+                                    agent,
                                     args.pred_hidden_size)
 
-    # Predict environments
+        # Predict environments
         predict_env = PredictEnv(env_model1, args.env_name, args.model_type)
 
     # Initial pool for env
