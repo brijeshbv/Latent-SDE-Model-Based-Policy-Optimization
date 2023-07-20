@@ -70,9 +70,8 @@ class SAC(object):
             next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
             qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
-            #+ (self.beta * log_next_state_transition_batch)
             next_q_value = reward_batch + mask_batch * self.gamma * (
-                        min_qf_next_target )
+                        min_qf_next_target + (self.beta * log_next_state_transition_batch))
 
         qf1, qf2 = self.critic(state_batch,
                                action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
