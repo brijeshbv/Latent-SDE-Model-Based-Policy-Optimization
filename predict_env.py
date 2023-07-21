@@ -159,19 +159,6 @@ class PredictEnv:
                                                                                                                    args.steps_to_predict,
                                                                                                                    total_step,
                                                                                                                    normalizer)
-        # inputs = np.concatenate((obs, act), axis=-1)
-        # ensemble_model_means_bnn, ensemble_model_vars_bnn = self.model_bnn.predict(inputs)
-        # print(f'bnn std deviation of prediction: {ensemble_model_vars_bnn.mean(axis=(0, 1))}')
-
-        # ensemble_model_stds = np.sqrt(ensemble_model_vars_bnn)
-        # ensemble_samples_bnn = ensemble_model_means_bnn + np.random.normal(
-        #     size=ensemble_model_means_bnn.shape) * ensemble_model_stds
-
-        # if total_step % 250 == 0:
-        #     self.plt_predictions(first_pred[:, :, :args.rollout_batch_size], ensemble_samples_bnn[:, :, :],
-        #                          fname=f'results/{args.resdir}/prediction_{total_step}')
-        # ensemble_samples_bnn = normalizer.inverse_transform(ensemble_samples_bnn)
-        # ensemble_samples_bnn += obs
         num_models, batch_size, _ = ensemble_lsde_model_op.shape
         model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
 

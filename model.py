@@ -191,7 +191,7 @@ class EnsembleModel(nn.Module):
         self.optimizer.step()
 
 
-class EnsembleDynamicsModel():
+class EnsembleDynamicsModel:
     def __init__(self, network_size, elite_size, state_size, action_size, hidden_size=200, use_decay=False):
         self.network_size = network_size
         self.elite_size = elite_size
