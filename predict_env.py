@@ -180,6 +180,8 @@ class PredictEnv:
             terminals = np.logical_or(terminals, terminal)
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
+        if np.any(terminals) == True:
+            print('some true terminals found')
 
         return_means = np.concatenate((model_means[:, :], model_means[:, :]), axis=-1)
 
