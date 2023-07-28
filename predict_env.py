@@ -171,13 +171,17 @@ class PredictEnv:
         model_means = ensemble_lsde_model_op[:, model_idxes, batch_idxes]
 
         rewards = np.empty((0, batch_size, 1))
-        terminals = np.full(( batch_size, 1), False)
+        terminals = np.full((batch_size, 1), False)
         for i in range(num_steps):
             next_obs = samples[i, :, :]
-            reward = self.get_reward(args.env_name, act[i], obs[i], next_obs).reshape((-1, 1))
-            rewards = np.concatenate((rewards, reward.reshape((1, batch_size, -1))), axis=0)
             terminal = self._termination_fn(self.env_name, obs[i], act[i], next_obs).reshape((batch_size, -1))
             terminals = np.logical_or(terminals, terminal)
+            episode_end_idx = np.where(np.any(terminals == True, axis=1))
+
+            reward = self.get_reward(args.env_name, act[i], obs[i], next_obs).reshape((-1, 1))
+            reward[episode_end_idx] = 0
+            rewards = np.concatenate((rewards, reward.reshape((1, batch_size, -1))), axis=0)
+
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
         if np.any(terminals) == True:
