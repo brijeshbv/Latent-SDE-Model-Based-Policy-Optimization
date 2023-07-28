@@ -101,7 +101,7 @@ class PredictEnv:
 
             xy_position_after = next_pos[:, 0:2]
             xy_velocity = (xy_position_after - xy_position_before) / 0.04
-            x_velocity, y_velocity = xy_velocity[:,0], xy_velocity[:,1]
+            x_velocity, y_velocity = xy_velocity[:, 0], xy_velocity[:, 1]
             forward_reward = 1 * x_velocity
             control_cost = ctrl_cost_weight * np.sum(np.square(action), axis=1)
             reward = forward_reward - control_cost
@@ -159,22 +159,29 @@ class PredictEnv:
                                                                                                                    args.steps_to_predict,
                                                                                                                    total_step,
                                                                                                                    normalizer)
-        num_models, batch_size, _ = ensemble_lsde_model_op.shape
+        num_steps, num_models, batch_size, num_dims = ensemble_lsde_model_op.shape
+
         model_idxes = np.random.choice(self.model_lsde.elite_model_idxes, size=batch_size)
 
         batch_idxes = np.arange(0, batch_size)
 
-        samples = ensemble_lsde_model_op[model_idxes, batch_idxes]
-        obs = ensemble_model_input[model_idxes, batch_idxes]
-        act = ensemble_model_actions[model_idxes, batch_idxes]
-        model_means = ensemble_lsde_model_op[model_idxes, batch_idxes]
+        samples = ensemble_lsde_model_op[:, model_idxes, batch_idxes]
+        obs = ensemble_model_input[:, model_idxes, batch_idxes]
+        act = ensemble_model_actions[:, model_idxes, batch_idxes]
+        model_means = ensemble_lsde_model_op[:, model_idxes, batch_idxes]
 
+        rewards = np.empty((0, batch_size, 1))
+        terminals = np.full(( batch_size, 1), False)
+        for i in range(num_steps):
+            next_obs = samples[i, :, :]
+            reward = self.get_reward(args.env_name, act[i], obs[i], next_obs).reshape((-1, 1))
+            rewards = np.concatenate((rewards, reward.reshape((1, batch_size, -1))), axis=0)
+            terminal = self._termination_fn(self.env_name, obs[i], act[i], next_obs).reshape((batch_size, -1))
+            terminals = np.logical_or(terminals, terminal)
         # log_prob, dev = self._get_logprob(samples, ensemble_model_means)
         # todo to convert back to lsde, remove 1
-        next_obs = samples[:, :]
-        rewards = self.get_reward(args.env_name, act, obs, next_obs).reshape((-1, 1))
-        terminals = self._termination_fn(self.env_name, obs, act, next_obs)
-        return_means = np.concatenate((model_means[:, :], terminals, model_means[:, :]), axis=-1)
+
+        return_means = np.concatenate((model_means[:, :], model_means[:, :]), axis=-1)
 
         if return_single:
             next_obs = next_obs[0]
@@ -183,7 +190,10 @@ class PredictEnv:
             terminals = terminals[0]
         info = {'mean': return_means, }
         print('lsde is being used for predict')
-        return obs, next_obs, rewards, terminals,act,  info
+        first_obs = obs[0]
+        first_act = act[0]
+
+        return first_obs, next_obs, rewards, terminals, first_act, info
 
     def plt_predictions(self, X, X_bnn, fname='reconstructions.png'):
         tt = 50

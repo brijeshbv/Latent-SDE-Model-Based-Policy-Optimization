@@ -17,8 +17,7 @@ import math
 import torch.nn.functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-font = {'family': 'normal',
-        'size': 40}
+font = {'size': 40}
 
 matplotlib.rc('font', **font)
 
@@ -447,13 +446,13 @@ class LatentSDEModel:
                 sorted_loss_idx = np.argsort(holdout_mse_loss)
                 self.elite_model_idxes = sorted_loss_idx[:self.elite_size].tolist()
                 break_train = self._save_best(epoch, holdout_mse_loss)
-                if break_train and total_step > 1000:
+                if break_train and total_step > 50:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred_mean[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
                     print(f'training ended epoch no, {epoch}, {holdout_mse_loss}')
                     break
-                elif total_step <= 1000 and epoch > 30:
+                elif total_step <= 50 and epoch > 30:
                     if total_step % 250 == 0:
                         self.plot_gym_results(holdout_labels[0], xs_pred_mean[0],
                                               fname=f'results/{args.resdir}/train_plt_{total_step}')
@@ -532,9 +531,9 @@ class LatentSDEModel:
                     axis=0)
 
         num_steps, ensemb, batch, dim = model_op.shape
-        model_op = model_op.reshape((ensemb, num_steps * batch, dim))
-        first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
-        model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
-        num_steps, ensemb, batch, dim = model_actions.shape
-        model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
+        # model_op = model_op.reshape((ensemb, num_steps * batch, dim))
+        # first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
+        # model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
+        # num_steps, ensemb, batch, dim = model_actions.shape
+        # model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
         return model_op, model_ip, model_actions, first_preds

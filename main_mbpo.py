@@ -7,7 +7,6 @@ from itertools import count
 import tqdm
 import logging
 
-
 import wandb
 
 from sac.replay_memory import ReplayMemory
@@ -18,6 +17,7 @@ from sample_env import EnvSampler
 from lsde_model import LatentSDEModel, StandardScaler
 
 normalizer = None
+
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
@@ -67,7 +67,7 @@ def readParser():
     # todo rollout_batch_size replay size 10000, 65536
     parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=100, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=5, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -96,7 +96,7 @@ def readParser():
     parser.add_argument('--policy_train_batch_size', type=int, default=256, metavar='A',
                         help='batch size for training policy')
     # todo was 5000
-    parser.add_argument('--init_exploration_steps', type=int, default=2000, metavar='A',
+    parser.add_argument('--init_exploration_steps', type=int, default=500, metavar='A',
                         help='exploration steps initially')
     parser.add_argument('--max_path_length', type=int, default=1000, metavar='A',
                         help='max length of path')
@@ -131,7 +131,7 @@ def set_rollout_length(args, epoch_step):
 
 def train_predict_model(args, env_pool, predict_env, total_step):
     # Get all samples from environment
-    state, action, reward, next_state, done = env_pool.sample(len(env_pool))
+    state, action, reward, next_state, done = env_pool.sample(min(len(env_pool), 20000))
     delta_state_label = next_state - state
     global normalizer
     if normalizer is None:
@@ -165,10 +165,11 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
     for i in range(rollout_length):
         # TODO: Get a batch of actions
         action = agent.select_action(state)
-        state, next_states, rewards, terminals,action, info = predict_env.step(args, state, action, total_step, normalizer)
+        state, next_states, rewards, terminals, action, info = predict_env.step(args, state, action, total_step,
+                                                                                normalizer)
         # TODO: Push a batch of samples
         model_pool.push_batch(
-            [(state[j], action[j], rewards[j], next_states[j], terminals[j]) for j in range(state.shape[0])])
+            [(state[j], action[j], rewards[:, j, :], next_states[j], terminals[j]) for j in range(state.shape[0])])
         nonterm_mask = ~terminals.squeeze(-1)
         if nonterm_mask.sum() == 0:
             break
@@ -187,7 +188,7 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
         model_batch_size = args.policy_train_batch_size - env_batch_size
 
         env_state, env_action, env_reward, env_next_state, env_done = env_pool.sample(int(env_batch_size))
-
+        env_reward = np.concatenate((env_reward.reshape((env_reward.shape[0], 1, -1)), np.zeros((env_reward.shape[0], 4, 1))), axis=1)
         if model_batch_size > 0 and len(model_pool) > 0:
             model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(
                 int(model_batch_size))
@@ -196,7 +197,7 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
                 np.concatenate(
                     (env_action, model_action),
                     axis=0), np.concatenate(
-                (np.reshape(env_reward, (env_reward.shape[0], -1)), model_reward), axis=0), \
+                (env_reward, model_reward), axis=0), \
                 np.concatenate((env_next_state,
                                 model_next_state),
                                axis=0), np.concatenate(
@@ -300,7 +301,6 @@ def main(args=None):
         wandb.login()
         wandb.init(project='lsde-mbrl')
 
-
     # Initial environment
     if args.env_name == 'InvertedPendulum-v4':
         env = gym.make(args.env_name)
@@ -308,14 +308,12 @@ def main(args=None):
         env = gym.make(args.env_name,
                        exclude_current_positions_from_observation=args.exclude_current_positions_from_observation)
 
-
-
     # Set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     # env.seed(args.seed)
     observation_space_shape_sac = env.observation_space.shape[0]
-    if args.env_name == "Hopper-v4" :
+    if args.env_name == "Hopper-v4":
         observation_space_shape_sac -= 1
     if args.env_name == "Swimmer-v4":
         observation_space_shape_sac -= 2
