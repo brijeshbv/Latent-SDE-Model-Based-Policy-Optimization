@@ -74,14 +74,14 @@ class SAC(object):
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(2)
         mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
-        gamma_batch = torch.FloatTensor([self.gamma ** (x) for x in range(reward_batch.shape[1])]).repeat(
+        gamma_batch = torch.FloatTensor([self.gamma ** (x) for x in range(reward_batch.shape[1])]).to(self.device).repeat(
             reward_batch.shape[0],1).unsqueeze(2)
 
         with torch.no_grad():
             next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
             qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
-            reward_sum = np.multiply(reward_batch, gamma_batch).sum(axis=1)
+            reward_sum = torch.multiply(reward_batch, gamma_batch).sum(dim=1)
             next_q_value = reward_sum + mask_batch * self.gamma ** (reward_batch.shape[1] + 1) * (
                 min_qf_next_target)
 
