@@ -67,7 +67,7 @@ def readParser():
     # todo rollout_batch_size replay size 10000, 65536
     parser.add_argument('--rollout_batch_size', type=int, default=10000, metavar='A',
                         help='rollout number M')
-    parser.add_argument('--steps_to_predict', type=int, default=5, metavar='A',
+    parser.add_argument('--steps_to_predict', type=int, default=10, metavar='A',
                         help='number of steps the env model should predict')
     # todo was 1000
     parser.add_argument('--epoch_length', type=int, default=1000, metavar='A',
@@ -188,7 +188,7 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
         model_batch_size = args.policy_train_batch_size - env_batch_size
 
         env_state, env_action, env_reward, env_next_state, env_done = env_pool.sample(int(env_batch_size))
-        env_reward = np.concatenate((env_reward.reshape((env_reward.shape[0], 1, -1)), np.zeros((env_reward.shape[0], 4, 1))), axis=1)
+        env_reward = np.concatenate((env_reward.reshape((env_reward.shape[0], 1, -1)), np.zeros((env_reward.shape[0], args.steps_to_predict - 1, 1))), axis=1)
         if model_batch_size > 0 and len(model_pool) > 0:
             model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(
                 int(model_batch_size))
@@ -299,7 +299,10 @@ def main(args=None):
         args = readParser()
     if args.wandb != 'no':
         wandb.login()
-        wandb.init(project='lsde-mbrl')
+        wandb.init(project='lsde-mbrl', config={
+            'steps_to_predict': args.steps_to_predict,
+            'rollout_batch_size': args.rollout_batch_size,
+        })
 
     # Initial environment
     if args.env_name == 'InvertedPendulum-v4':
