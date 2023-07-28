@@ -530,10 +530,10 @@ class LatentSDEModel:
                     (model_actions, actions.reshape(1, actions.shape[0], actions.shape[1], actions.shape[2])),
                     axis=0)
 
-        num_steps, ensemb, batch, dim = model_op.shape
-        # model_op = model_op.reshape((ensemb, num_steps * batch, dim))
-        # first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
-        # model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
-        # num_steps, ensemb, batch, dim = model_actions.shape
-        # model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
+        # num_steps, ensemb, batch, dim = model_op.shape
+        # # model_op = model_op.reshape((ensemb, num_steps * batch, dim))
+        # # first_preds = first_preds.reshape((ensemb, num_steps * batch, dim))
+        # # model_ip = model_ip.reshape((ensemb, num_steps * batch, dim))
+        # # num_steps, ensemb, batch, dim = model_actions.shape
+        # # model_actions = model_actions.reshape((ensemb, num_steps * batch, dim))
         return model_op, model_ip, model_actions, first_preds
